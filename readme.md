@@ -1,6 +1,6 @@
 # LowerBoundsIneq
 
-MATLAB code for **computer-assisted verification of sharp Dirichlet Laplacian eigenvalue inequalities on planar triangles**, using verified finite element bounds and (optionally) **interval arithmetic (INTLAB)**.
+MATLAB code for **computer-assisted verification of sharp Dirichlet Laplacian eigenvalue inequalities on planar triangles**, using verified finite element bounds.
 
 This repository implements the workflow described in:
 
