@@ -80,7 +80,7 @@ The parameter space is split into regions (paper terminology):
    ```matlab
    cd LowerBoundsIneq
    my_intlab_config
-````
+  ````
 
 ---
 
