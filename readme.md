@@ -188,20 +188,6 @@ LowerBoundsIneq/
   results/               # example outputs
   tests/                 # test scripts + sample CSVs in tests/results/
 ```
-
----
-
-## Troubleshooting
-
-* **“gmsh not found” / mesh generation fails**
-  Set `gmsh_command` correctly in `my_intlab_config.m`.
-
-* **INTLAB errors**
-  Make sure `intlab_root` is correct and that `startintlab` works in your MATLAB session.
-
-* **Different results across machines**
-  Mesh generation can vary across Gmsh versions. For reproducibility, match the version used in your experiments as closely as possible.
-
 ---
 
 ## Citation
