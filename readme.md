@@ -14,29 +14,29 @@ The main entry point is **`VerificationRunner.m`**, which orchestrates the verif
 
 Let
 
-- \(\triangle\) be a planar triangle,
-- \(\lambda_1(\triangle)\) be the **first Dirichlet eigenvalue** of the Laplacian on \(\triangle\),
-- \(|\triangle|\) be the **area**,
-- \(|\partial\triangle|\) be the **perimeter**.
+- $\triangle$ be a planar triangle,
+- $\lambda_1(\triangle)$ be the **first Dirichlet eigenvalue** of the Laplacian on $\triangle$,
+- $|\triangle|$ be the **area**,
+- $|\partial\triangle|$ be the **perimeter**.
 
 This project certifies nonnegativity of the following shape functionals (see `src/algorithms/compute_J_lower_bound.m`):
 
 ### J1 (Laugesen–Siudeja type)
-\[
+$$
 J_1(\triangle)=\lambda_1(\triangle)|\triangle|
 -\frac{\pi^2}{16}\frac{|\partial\triangle|^2}{|\triangle|}
 -\frac{7\sqrt{3}\pi^2}{12}.
-\]
+$$
 
 ### J2 (Cheeger type)
-\[
+$$
 J_2(\triangle)=\lambda_1(\triangle)|\triangle|
 -\frac{4\pi^2}{\left(3+\sqrt{\pi\sqrt{3}}\right)^2}
 \cdot
 \frac{\left(|\partial \triangle|+\sqrt{4\pi|\triangle|}\right)^2}{4|\triangle|}.
-\]
+$$
 
-Goal: certify **\(J_1(\triangle)\ge 0\)** and/or **\(J_2(\triangle)\ge 0\)** for all triangles in the parameter domain considered in the paper.
+Goal: certify **$J_1(\triangle)\ge 0$** and/or **$J_2(\triangle)\ge 0$** for all triangles in the parameter domain considered in the paper.
 
 ---
 
@@ -48,8 +48,8 @@ The parameter space is split into regions (paper terminology):
   Verified via **Algorithm 2** (`src/algorithms/Algorithm2_VerifyOmegaUp.m`) using bounds on second derivatives and positivity checks.
 
 - **Ω_mid** (intermediate region)  
-  Verified via **Algorithm 3** (`src/algorithms/Algorithm3_VerifyOmegaMid.m`) by splitting Ω_mid into many **cells** and proving \(J\ge 0\) on each cell using:
-  - rigorous **lower bounds** for \(\lambda_1\) (CR; optionally LG),
+  Verified via **Algorithm 3** (`src/algorithms/Algorithm3_VerifyOmegaMid.m`) by splitting Ω_mid into many **cells** and proving $J\ge 0$ on each cell using:
+  - rigorous **lower bounds** for $\lambda_1$ (CR; optionally LG),
   - rigorous **geometry bounds** (area/perimeter),
   - optional **interval propagation** to keep everything certified.
 
