@@ -40,9 +40,9 @@ Goal: certify **$J_1(\triangle)\ge 0$** and/or **$J_2(\triangle)\ge 0$** for all
 
 ---
 
-## High-level approach
+## Approach
 
-The parameter space is split into regions (paper terminology):
+The parameter space is split into regions:
 
 - **Ω_up** (near the equilateral triangle)  
   Verified via **Algorithm 2** (`src/algorithms/Algorithm2_VerifyOmegaUp.m`) using bounds on second derivatives and positivity checks.
@@ -201,12 +201,6 @@ LowerBoundsIneq/
 
 * **Different results across machines**
   Mesh generation can vary across Gmsh versions. For reproducibility, match the version used in your experiments as closely as possible.
-
----
-
-## Licensing / third-party code
-
-This repository bundles third-party components under `src/lib/` (e.g., `VFEM2D`, `veigs`) which include their own license files. Please check those licenses before redistributing or publishing derived code.
 
 ---
 
