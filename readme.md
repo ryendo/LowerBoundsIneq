@@ -27,12 +27,10 @@ This project verifies nonnegativity of the following shape functionals (see `src
   $$
 
 - **J2 (Cheeger type)**  
-  $$
-  J_2(\triangle) = \lambda_1(\triangle)\,|\triangle|
+  $$J_2(\triangle) = \lambda_1(\triangle)\,|\triangle|
   - \frac{4\pi^2}{\left(3+\sqrt{\pi\sqrt{3}}\right)^2}
     \cdot
-    \frac{\left(|\partial \triangle|+\sqrt{4\pi|\triangle|}\right)^2}{4|\triangle|}.
-  $$
+    \frac{\left(|\partial \triangle|+\sqrt{4\pi|\triangle|}\right)^2}{4|\triangle|}.$$
 
 The verification goal is to certify **$J_1(\triangle) \ge 0$** (and/or **$J_2(\triangle) \ge 0$**) for all triangles $\triangle$ in the parameter domain considered in the paper.
 
