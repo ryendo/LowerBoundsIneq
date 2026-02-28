@@ -60,6 +60,7 @@ all_results.compute_time = NaN(n_cells, 1);
 all_results.status       = strings(n_cells, 1);
 all_results.note         = strings(n_cells, 1);
 
+
 for i_cell = cell_start:cell_end
     local_k = i_cell - cell_start + 1;
 
@@ -99,6 +100,7 @@ for i_cell = cell_start:cell_end
     catch ME
         if verbose
             fprintf('[Cell index %d] ERROR: %s\n', i_cell, ME.message);
+            fprintf('%s\n', getReport(ME, 'extended', 'hyperlinks', 'on'));
         end
         J_lower = -Inf;
         is_cell_verified = false;

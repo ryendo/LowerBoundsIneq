@@ -8,7 +8,7 @@ sh = fullfile(this_dir,'create_mesh.sh');
 V  = I_intval([0 0; 1 0; a b]);
 FV = [0 0; 1 0; I_mid(a) I_mid(b)];
 
-fid = fopen(fullfile(mesh_path,'/temp.geo'),'w');
+fid = fopen(fullfile(mesh_path,'temp.geo'),'w');
 for i=1:3
     fprintf(fid,'Point(%d)={%.17g,%.17g,0,%.17g};\n',i,FV(i,1),FV(i,2),I_mid(h));
 end
@@ -20,7 +20,7 @@ cmd = sprintf('bash "%s" "%s" "%s"', sh, gmsh_command, mesh_path);
 [st,out] = system(cmd); if st~=0, error("Mesh generation failed:\n%s",out); end
 
 
-mesh = gmshread(fullfile(mesh_path,'/temp.msh'));
+mesh = gmshread(fullfile(mesh_path,'temp.msh'));
 mesh.domain = V;
 mesh = apply_exact_boundary_point_setting(mesh,V);
 end

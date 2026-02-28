@@ -113,11 +113,11 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         is_bnd_lg = ismember(edge_LG, bd_LG, 'rows');
         
         
-        Lagrange_order = str2num(cell_data.fem_order_lower_LG);
+        Lagrange_order = cell_data.fem_order_lower_LG;
 
         % Compute High-Order Upper Bounds & Eigenfunctions (Lagrange)
         [LA_eig, LA_eigf, LA_eigf_with_bdry, LA_A, LA_M, ~, ~, ~, ~] = ...
-            laplace_eig_lagrange_detailed_fast(Lagrange_order, vert_LG, edge_LG, tri_LG, bd_LG, neig);
+            laplace_eig_lagrange_detailed(Lagrange_order, vert_LG, edge_LG, tri_LG, bd_LG, neig);
 
         % Step 3: Construct LG Matrices
         % -------------------------------------------------------------
@@ -127,7 +127,7 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         RT_order = Lagrange_order;
         
         % Solve H(div) problem using Raviart-Thomas (RT) elements
-        [mat_pih, RTRT] = RT_Hdiv_problem_dirichlet_fast(RT_order, Lagrange_order, vert_LG, edge_LG, tri_LG, bd_LG, LA_eigf_with_bdry);
+        [mat_pih, RTRT] = RT_Hdiv_problem_dirichlet(RT_order, Lagrange_order, vert_LG, edge_LG, tri_LG, bd_LG, LA_eigf_with_bdry);
 
         A2 = mat_pih' * RTRT * mat_pih;
         

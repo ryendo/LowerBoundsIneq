@@ -1,4 +1,1 @@
-J1,12001,NaN,NaN,"error","Size inputs must be integers.",2026-02-13 07:28:19
-J1,12002,NaN,NaN,"error","Size inputs must be integers.",2026-02-13 07:28:29
-J1,1,NaN,NaN,"error","Size inputs must be integers.",2026-02-13 07:32:01
-J1,2,NaN,NaN,"error","Size inputs must be integers.",2026-02-13 07:32:11
+conjecture,cell_id,verified,J_lower,status,note,run_timestamp

@@ -281,6 +281,7 @@ classdef VerificationRunner < handle
             n_verified = 0;
             all_ok = true;
 
+
             for i = 1:nCells
                 cid = ids(i);
 
