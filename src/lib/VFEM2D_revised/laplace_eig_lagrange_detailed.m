@@ -22,7 +22,7 @@ is_edge_bd = find_is_edge_bd(edge, bd, ne, nb);
 neig = min(neig, size(A_grad, 1));
 [V, D] = eigs(I_mid(A_grad), I_mid(A_L2), neig, 'sm');
 
-[~, idx] = sort(diag(D));
+[eig_value, idx] = sort(diag(D));
 eig_func_no_bdry = V(:, idx);
 eig_func_with_bdry = I_intval(zeros(ndof,neig));
 inside_dof_idx = 1:ndof; inside_dof_idx(bd_dof_idx)=[];
@@ -33,7 +33,7 @@ dof_idx(bd_dof_idx)=[];
 fem_func = I_intval(zeros(ndof,neig));
 fem_func(dof_idx,:)=V(:, idx);
 
-eig_value = diag(V' * A_grad * V)./diag(V' * A_L2 * V);
+%eig_value = [(1:neig)', eig_value];
 end
 
 function [f_for_Hdiv_problem, point_for_Hdiv_problem] = Lagrange_get_femfunc_value_for_Hdiv_problem(lagrange_order, vert, edge, tri, tri2edge, femfunc)
@@ -105,356 +105,118 @@ for i = 1:nbasis
 end
 end
 
-function [A_glob_grad, A_glob_L2, A_glob_ux_ux, A_glob_ux_uy, A_glob_uy_uy, bd_dof_idx, ndof] = ...
-    Lagrange_dirichlet_eig_matrix(lagrange_order, vert, edge, tri, tri2edge, is_edge_bd)
-%LAGRANGE_DIRICHLET_EIG_MATRIX  Assemble interval FEM matrices for Dirichlet Laplacian eigenproblems.
-%
-% This routine builds (with interval arithmetic preserved):
-%   - A_glob_grad : stiffness matrix  (∫_K ∇u·∇v)
-%   - A_glob_L2   : mass matrix       (∫_K u v)
-%   - A_glob_ux_ux: ∫_K u_x v_x
-%   - A_glob_ux_uy: ∫_K (u_x v_y + u_y v_x)/2   (symmetric cross term)
-%   - A_glob_uy_uy: ∫_K u_y v_y
-%
-% Dirichlet DOFs are removed at the end:
-%   boundary DOFs = boundary vertices + edge-interior DOFs on boundary edges.
-%
-% Inputs
-%   lagrange_order : polynomial degree p >= 1
-%   vert           : (nv x 2) vertex coordinates (can be intval)
-%   edge           : (ne x 2) vertex indices for each edge
-%   tri            : (nt x 3) vertex indices for each triangle
-%   tri2edge       : (nt x 3) edge indices for each triangle, in local edge order
-%   is_edge_bd     : (ne x 1) flag, 1 if edge is on boundary, else 0
-%
-% Outputs
-%   A_glob_*       : assembled sparse interval matrices AFTER removing boundary DOFs
-%   bd_dof_idx     : boundary DOF indices in the ORIGINAL (full) numbering
-%   ndof           : total number of DOFs in the ORIGINAL (full) numbering
-%
-% Notes on speed:
-%   - Avoids intval.det and avoids per-(i,j) 2x2 matrix products Binv'*S*Binv.
-%   - Uses scalar coefficient combinations with precomputed reference matrices.
-%   - Precomputes element-to-global DOF maps (integer-only).
-%
-% Requires helper functions (as in your codebase):
-%   Lagrange_basis, Lagrange_inner_product_L1L2L3_all,
-%   Lagrange_create_coord_basis, Lagrange_create_coord_basis_grad,
-%   I_zeros, I_sparse
-%
 
-    p = lagrange_order;
-    if p < 1
-        error('lagrange_order must be >= 1.');
+function [A_glob_grad, A_glob_L2, A_glob_ux_ux, A_glob_ux_uy, A_glob_uy_uy, bd_dof_idx, ndof] = Lagrange_dirichlet_eig_matrix(lagrange_order, vert, edge, tri, tri2edge, is_edge_bd)
+[basis, nbasis] = Lagrange_basis(lagrange_order);
+M_ip_elem  = Lagrange_inner_product_L1L2L3_all(lagrange_order);
+M_ip_edge1 = Lagrange_inner_product_edge_L1L2L3_all(lagrange_order, 1);
+M_ip_edge2 = Lagrange_inner_product_edge_L1L2L3_all(lagrange_order, 2);
+M_ip_edge3 = Lagrange_inner_product_edge_L1L2L3_all(lagrange_order, 3);
+
+M_ip_basis_grad_ijT_all = cell(nbasis);
+M_ip_basis_ij = I_zeros(nbasis, nbasis);
+M_ip_basis_edge_ij_all = cell(3, 1);
+M_ip_basis_edge1_ij = I_zeros(nbasis, nbasis);
+M_ip_basis_edge2_ij = I_zeros(nbasis, nbasis);
+M_ip_basis_edge3_ij = I_zeros(nbasis, nbasis);
+for i = 1:nbasis
+    for j = i:nbasis
+        ei = Lagrange_create_coord_basis_grad(basis, i, lagrange_order);
+        ej = Lagrange_create_coord_basis_grad(basis, j, lagrange_order);
+        M_ip_basis_grad_ijT_all{j, i} = ei' * M_ip_elem * ej;
+        
+        ei = Lagrange_create_coord_basis(basis, i, lagrange_order);
+        ej = Lagrange_create_coord_basis(basis, j, lagrange_order);
+        M_ip_basis_ij(j, i) = ei' * M_ip_elem * ej;
+        M_ip_basis_edge1_ij(j, i) = ei' * M_ip_edge1 * ej;
+        M_ip_basis_edge2_ij(j, i) = ei' * M_ip_edge2 * ej;
+        M_ip_basis_edge3_ij(j, i) = ei' * M_ip_edge3 * ej;
     end
+end
+M_ip_basis_edge_ij_all{1, 1} = M_ip_basis_edge1_ij + tril(M_ip_basis_edge1_ij, -1)';
+M_ip_basis_edge_ij_all{2, 1} = M_ip_basis_edge2_ij + tril(M_ip_basis_edge2_ij, -1)';
+M_ip_basis_edge_ij_all{3, 1} = M_ip_basis_edge3_ij + tril(M_ip_basis_edge3_ij, -1)';
 
-    % -------------------------------------------------------------
-    % (0) Mesh sizes and DOF counts
-    % -------------------------------------------------------------
-    nv = size(vert, 1);
-    ne = size(edge, 1);
-    nt = size(tri,  1);
+nv = size(vert, 1);
+ne = size(edge, 1);
+nt = size(tri,  1);
 
-    p1 = p - 1;
-    nTriInt = p1 * max(p-2, 0) / 2; % interior DOFs per triangle
+ndof = nv + (lagrange_order-1)*ne + (lagrange_order-1)*(lagrange_order-2)/2*nt;
 
-    ndof = nv + p1 * ne + nTriInt * nt;
+A_glob_grad = I_sparse(ndof, ndof);
+A_glob_L2 =I_sparse(ndof, ndof);
+A_glob_ux_ux = I_sparse(ndof, ndof);
+A_glob_ux_uy = I_sparse(ndof, ndof);
+A_glob_uy_uy = I_sparse(ndof, ndof);
+M = I_sparse(ndof, ndof);
 
-    % -------------------------------------------------------------
-    % (1) Build boundary DOF list (Dirichlet)
-    % -------------------------------------------------------------
-    bdEdgeIds = find(is_edge_bd(:) ~= 0);            % boundary edge indices
-    bdVerts   = unique(edge(bdEdgeIds, :));          % boundary vertices
-
-    bdEdgeDofs = [];
-    if p1 > 0 && ~isempty(bdEdgeIds)
-        % Edge-interior DOFs on boundary edges (all of them are Dirichlet)
-        % Global numbering for edge DOFs:
-        %   nv + p1*(eId-1) + (1:p1)
-        tmp = nv + p1 * (bdEdgeIds(:) - 1) + (1:p1);
-        bdEdgeDofs = tmp.';          % (p1 x nbdEdges)
-        bdEdgeDofs = bdEdgeDofs(:);  % vector
-    end
-
-    bd_dof_idx = unique([bdVerts(:); bdEdgeDofs(:)]);
-    bd_dof_idx = bd_dof_idx(:); % column
-
-    % -------------------------------------------------------------
-    % (2) Precompute reference (element) inner products
-    % -------------------------------------------------------------
-    [basis, nbasis] = Lagrange_basis(p);
-    M_ip_elem = Lagrange_inner_product_L1L2L3_all(p);
-
-    % Sanity check on nbasis for standard Lagrange Pp on triangles
-    % nbasis should equal 3 + 3*(p-1) + (p-1)(p-2)/2
-    nbasis_expected = 3 + 3*p1 + nTriInt;
-    if nbasis ~= nbasis_expected
-        warning(['nbasis=%d but expected %d for standard P%d. ', ...
-                 'Proceeding, but DOF mapping assumes standard ordering.'], ...
-                 nbasis, nbasis_expected, p);
-    end
-
-    % Precompute basis vectors and gradient vectors on the reference element
-    phi  = cell(nbasis, 1); % (Nq x 1)
-    gphi = cell(nbasis, 1); % (Nq x 2)
-    for i = 1:nbasis
-        phi{i}  = Lagrange_create_coord_basis(basis, i, p);
-        gphi{i} = Lagrange_create_coord_basis_grad(basis, i, p);
-    end
-
-    % Reference L2 inner product matrix (symmetric)
-    RefL2 = I_zeros(nbasis, nbasis);
-
-    % Reference gradient inner product tensors:
-    % For each pair (i,j), we need the 2x2 matrix:
-    %   G_ij = ∫ (grad phi_i)(grad phi_j)^T   on reference element
-    %   S11(i,j) = G_ij(1,1), etc.
-    S11 = I_zeros(nbasis, nbasis);
-    S12 = I_zeros(nbasis, nbasis);
-    S21 = I_zeros(nbasis, nbasis);
-    S22 = I_zeros(nbasis, nbasis);
-
+for k = 1:nt
+    vert_idx = tri(k,:);
+    x1 = vert(vert_idx(1), 1); y1 = vert(vert_idx(1), 2);
+    x2 = vert(vert_idx(2), 1); y2 = vert(vert_idx(2), 2);
+    x3 = vert(vert_idx(3), 1); y3 = vert(vert_idx(3), 2);
+    B = [x2-x1, x3-x1; y2-y1, y3-y1];
+    Binv = [y3-y1, x1-x3; y1-y2, x2-x1] / det(B);
+    A_grad = I_zeros(nbasis, nbasis);
+    A_ux_vx = I_zeros(nbasis, nbasis);
+    A_ux_vy = I_zeros(nbasis, nbasis);
+    A_uy_vy = I_zeros(nbasis, nbasis);
     for i = 1:nbasis
         for j = 1:i
-            % L2
-            bij = phi{i}' * M_ip_elem * phi{j};
-            RefL2(i,j) = bij;
-            RefL2(j,i) = bij; % symmetry
-
-            % Grad-grad (2x2)
-            Gij = gphi{i}' * M_ip_elem * gphi{j}; % 2x2
-
-            % Fill (i,j)
-            S11(i,j) = Gij(1,1);
-            S12(i,j) = Gij(1,2);
-            S21(i,j) = Gij(2,1);
-            S22(i,j) = Gij(2,2);
-
-            if i ~= j
-                % For swapped indices: Gji = (Gij)^T
-                S11(j,i) = Gij(1,1);
-                S12(j,i) = Gij(2,1);
-                S21(j,i) = Gij(1,2);
-                S22(j,i) = Gij(2,2);
-            end
+            mat_base = Binv' * M_ip_basis_grad_ijT_all{i, j} * Binv;
+            A_grad(i, j) = trace(mat_base) * det(B);
+            A_ux_vx(i, j)   = mat_base(1,1) * det(B);
+            A_ux_vy(i, j)   = (mat_base(1,2)+mat_base(2,1))/2 * det(B);
+            A_uy_vy(i, j)   = mat_base(2,2) * det(B);
         end
     end
-
-    % -------------------------------------------------------------
-    % (3) Precompute element-to-global DOF maps (integer-only)
-    % -------------------------------------------------------------
-    elem2dof = zeros(nbasis, nt);
-
-    local_edge_start_vert = [2, 3, 1]; % matches your original convention
-
-    for k = 1:nt
-        vIds = tri(k, :);
-        eIds = tri2edge(k, :);
-
-        g = zeros(nbasis, 1);
-        g(1:3) = vIds;
-
-        % Edge DOFs
-        for le = 1:3
-            eId = eIds(le);
-            startV = vIds(local_edge_start_vert(le));
-
-            if p1 > 0
-                if edge(eId, 1) == startV
-                    edofs = nv + p1*(eId-1) + (1:p1);
-                else
-                    edofs = nv + p1*(eId-1) + (p1:-1:1);
-                end
-                g(3 + p1*(le-1) + (1:p1)) = edofs(:);
-            end
+    A_grad = A_grad + tril(A_grad, -1)';
+    A_ux_vx = A_ux_vx + tril(A_ux_vx, -1)';
+    A_ux_vy = A_ux_vy + tril(A_ux_vy, -1)';
+    A_uy_vy = A_uy_vy + tril(A_uy_vy, -1)';
+    
+    A_L2 = (M_ip_basis_ij + tril(M_ip_basis_ij, -1)') * det(B);
+    
+    edge_idx = tri2edge(k, :);
+    edge_vec = vert(vert_idx([2,3,1]), :) - vert(vert_idx([3,1,2]), :);
+    local_edge_start_vert = [2, 3, 1];
+    map_dof_idx_l2g = zeros(nbasis, 1);
+    map_dof_idx_l2g(1:3) = vert_idx;
+    for i = 1:3
+        if edge(edge_idx(i), 1) == vert_idx(local_edge_start_vert(i))
+            map_dof_idx_l2g(3+(lagrange_order-1)*(i-1)+1:3+(lagrange_order-1)*i) = nv+(lagrange_order-1)*(edge_idx(i)-1)+1:1:nv+(lagrange_order-1)*edge_idx(i);
+        else
+            map_dof_idx_l2g(3+(lagrange_order-1)*(i-1)+1:3+(lagrange_order-1)*i) = nv+(lagrange_order-1)*edge_idx(i):-1:nv+(lagrange_order-1)*(edge_idx(i)-1)+1;
         end
+    end
+    map_dof_idx_l2g(3+(lagrange_order-1)*3+1:end) = nv + (lagrange_order-1)*ne + ...
+                                                    ((lagrange_order-1)*(lagrange_order-2)/2*(k-1)+1:(lagrange_order-1)*(lagrange_order-2)/2*k);
+    
+    A_glob_grad(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_grad(map_dof_idx_l2g, map_dof_idx_l2g) + A_grad;
+    A_glob_ux_ux(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_ux_ux(map_dof_idx_l2g, map_dof_idx_l2g) + A_ux_vx;
+    A_glob_ux_uy(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_ux_uy(map_dof_idx_l2g, map_dof_idx_l2g) + A_ux_vy;
+    A_glob_uy_uy(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_uy_uy(map_dof_idx_l2g, map_dof_idx_l2g) + A_uy_vy;
+    A_glob_L2(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_L2(map_dof_idx_l2g, map_dof_idx_l2g) + A_L2;
 
-        % Triangle interior DOFs (if any)
-        if nTriInt > 0
-            base = nv + p1*ne + nTriInt*(k-1);
-            g(3 + 3*p1 + (1:nTriInt)) = base + (1:nTriInt);
+    for i = 1:3
+        if is_edge_bd(edge_idx(i)) == 1
+            M(map_dof_idx_l2g, map_dof_idx_l2g) = M(map_dof_idx_l2g, map_dof_idx_l2g) + sqrt(edge_vec(i, :)*edge_vec(i, :)') * M_ip_basis_edge_ij_all{i, 1};
         end
-
-        elem2dof(:, k) = g;
     end
-
-    % -------------------------------------------------------------
-    % (4) Allocate global sparse interval matrices
-    % -------------------------------------------------------------
-    A_glob_grad = I_sparse(ndof, ndof);
-    A_glob_L2   = I_sparse(ndof, ndof);
-    A_glob_ux_ux = I_sparse(ndof, ndof);
-    A_glob_ux_uy = I_sparse(ndof, ndof);
-    A_glob_uy_uy = I_sparse(ndof, ndof);
-
-    % -------------------------------------------------------------
-    % (5) Element loop: fast interval-safe assembly
-    % -------------------------------------------------------------
-    for k = 1:nt
-        vIds = tri(k, :);
-
-        x1 = vert(vIds(1), 1);  y1 = vert(vIds(1), 2);
-        x2 = vert(vIds(2), 1);  y2 = vert(vIds(2), 2);
-        x3 = vert(vIds(3), 1);  y3 = vert(vIds(3), 2);
-
-        % Jacobian determinant (explicit 2x2 det; avoids intval.det)
-        detB = (x2-x1)*(y3-y1) - (x3-x1)*(y2-y1);
-
-        % Inverse Jacobian for mapping gradients:
-        % Binv = [a b; c d] = [y3-y1, x1-x3; y1-y2, x2-x1] / detB
-        a = (y3 - y1) / detB;
-        b = (x1 - x3) / detB;
-        c = (y1 - y2) / detB;
-        d = (x2 - x1) / detB;
-
-        % Compute Binv' * G_ij * Binv component-wise as linear combinations.
-        % Let G_ij have components S11,S12,S21,S22 (as matrices in i,j).
-        % Then for all (i,j), the (1,1),(1,2),(2,1),(2,2) entries are:
-        m11 = (a*a)*S11 + (a*c)*S12 + (c*a)*S21 + (c*c)*S22;
-        m22 = (b*b)*S11 + (b*d)*S12 + (d*b)*S21 + (d*d)*S22;
-        m12 = (a*b)*S11 + (a*d)*S12 + (c*b)*S21 + (c*d)*S22;
-        m21 = (b*a)*S11 + (b*c)*S12 + (d*a)*S21 + (d*c)*S22;
-
-        % Local matrices (already symmetric in exact arithmetic; keep as is)
-        A_loc_grad  = detB * (m11 + m22);          % trace * detB
-        A_loc_uxux  = detB * m11;
-        A_loc_uxuy  = detB * (m12 + m21) / 2;
-        A_loc_uyuy  = detB * m22;
-
-        A_loc_L2 = detB * RefL2;
-
-        % Assemble into global matrices
-        g = elem2dof(:, k);
-
-        A_glob_grad(g, g) = A_glob_grad(g, g) + A_loc_grad;
-        A_glob_L2(g, g)   = A_glob_L2(g, g)   + A_loc_L2;
-
-        A_glob_ux_ux(g, g) = A_glob_ux_ux(g, g) + A_loc_uxux;
-        A_glob_ux_uy(g, g) = A_glob_ux_uy(g, g) + A_loc_uxuy;
-        A_glob_uy_uy(g, g) = A_glob_uy_uy(g, g) + A_loc_uyuy;
-    end
-
-    % -------------------------------------------------------------
-    % (6) Remove Dirichlet DOFs (boundary)
-    % -------------------------------------------------------------
-    A_glob_grad(bd_dof_idx, :) = [];  A_glob_grad(:, bd_dof_idx) = [];
-    A_glob_L2(bd_dof_idx, :)   = [];  A_glob_L2(:, bd_dof_idx)   = [];
-
-    A_glob_ux_ux(bd_dof_idx, :) = [];  A_glob_ux_ux(:, bd_dof_idx) = [];
-    A_glob_ux_uy(bd_dof_idx, :) = [];  A_glob_ux_uy(:, bd_dof_idx) = [];
-    A_glob_uy_uy(bd_dof_idx, :) = [];  A_glob_uy_uy(:, bd_dof_idx) = [];
-
 end
 
-% function [A_glob_grad, A_glob_L2, A_glob_ux_ux, A_glob_ux_uy, A_glob_uy_uy, bd_dof_idx, ndof] = Lagrange_dirichlet_eig_matrix(lagrange_order, vert, edge, tri, tri2edge, is_edge_bd)
-% [basis, nbasis] = Lagrange_basis(lagrange_order);
-% M_ip_elem  = Lagrange_inner_product_L1L2L3_all(lagrange_order);
-% M_ip_edge1 = Lagrange_inner_product_edge_L1L2L3_all(lagrange_order, 1);
-% M_ip_edge2 = Lagrange_inner_product_edge_L1L2L3_all(lagrange_order, 2);
-% M_ip_edge3 = Lagrange_inner_product_edge_L1L2L3_all(lagrange_order, 3);
+bd_dof_idx=find(diag(M)>0);
 
-% M_ip_basis_grad_ijT_all = cell(nbasis);
-% M_ip_basis_ij = I_zeros(nbasis, nbasis);
-% M_ip_basis_edge_ij_all = cell(3, 1);
-% M_ip_basis_edge1_ij = I_zeros(nbasis, nbasis);
-% M_ip_basis_edge2_ij = I_zeros(nbasis, nbasis);
-% M_ip_basis_edge3_ij = I_zeros(nbasis, nbasis);
-% for i = 1:nbasis
-%     for j = i:nbasis
-%         ei = Lagrange_create_coord_basis_grad(basis, i, lagrange_order);
-%         ej = Lagrange_create_coord_basis_grad(basis, j, lagrange_order);
-%         M_ip_basis_grad_ijT_all{j, i} = ei' * M_ip_elem * ej;
-        
-%         ei = Lagrange_create_coord_basis(basis, i, lagrange_order);
-%         ej = Lagrange_create_coord_basis(basis, j, lagrange_order);
-%         M_ip_basis_ij(j, i) = ei' * M_ip_elem * ej;
-%         M_ip_basis_edge1_ij(j, i) = ei' * M_ip_edge1 * ej;
-%         M_ip_basis_edge2_ij(j, i) = ei' * M_ip_edge2 * ej;
-%         M_ip_basis_edge3_ij(j, i) = ei' * M_ip_edge3 * ej;
-%     end
-% end
-% M_ip_basis_edge_ij_all{1, 1} = M_ip_basis_edge1_ij + tril(M_ip_basis_edge1_ij, -1)';
-% M_ip_basis_edge_ij_all{2, 1} = M_ip_basis_edge2_ij + tril(M_ip_basis_edge2_ij, -1)';
-% M_ip_basis_edge_ij_all{3, 1} = M_ip_basis_edge3_ij + tril(M_ip_basis_edge3_ij, -1)';
+A_glob_grad(bd_dof_idx,:)=[]; A_glob_grad(:,bd_dof_idx)=[];
+A_glob_ux_ux(bd_dof_idx,:)=[]; A_glob_ux_ux(:,bd_dof_idx)=[];
+A_glob_ux_uy(bd_dof_idx,:)=[]; A_glob_ux_uy(:,bd_dof_idx)=[];
+A_glob_uy_uy(bd_dof_idx,:)=[]; A_glob_uy_uy(:,bd_dof_idx)=[];
+A_glob_L2(bd_dof_idx,:)=[];   A_glob_L2(:,bd_dof_idx)=[];
+end
 
-% nv = size(vert, 1);
-% ne = size(edge, 1);
-% nt = size(tri,  1);
-
-% ndof = nv + (lagrange_order-1)*ne + (lagrange_order-1)*(lagrange_order-2)/2*nt;
-
-% A_glob_grad = I_sparse(ndof, ndof);
-% A_glob_L2 =I_sparse(ndof, ndof);
-% A_glob_ux_ux = I_sparse(ndof, ndof);
-% A_glob_ux_uy = I_sparse(ndof, ndof);
-% A_glob_uy_uy = I_sparse(ndof, ndof);
-% M = I_sparse(ndof, ndof);
-
-% for k = 1:nt
-%     vert_idx = tri(k,:);
-%     x1 = vert(vert_idx(1), 1); y1 = vert(vert_idx(1), 2);
-%     x2 = vert(vert_idx(2), 1); y2 = vert(vert_idx(2), 2);
-%     x3 = vert(vert_idx(3), 1); y3 = vert(vert_idx(3), 2);
-%     B = [x2-x1, x3-x1; y2-y1, y3-y1];
-%     detB = (x2-x1)*(y3-y1) - (x3-x1)*(y2-y1);
-%     Binv = [y3-y1, x1-x3; y1-y2, x2-x1] / detB;
-%     A_grad = I_zeros(nbasis, nbasis);
-%     A_ux_vx = I_zeros(nbasis, nbasis);
-%     A_ux_vy = I_zeros(nbasis, nbasis);
-%     A_uy_vy = I_zeros(nbasis, nbasis);
-%     for i = 1:nbasis
-%         for j = 1:i
-%             mat_base = Binv' * M_ip_basis_grad_ijT_all{i, j} * Binv;
-%             A_grad(i, j) = trace(mat_base) * detB;
-%             A_ux_vx(i, j)   = mat_base(1,1) * detB;
-%             A_ux_vy(i, j)   = (mat_base(1,2)+mat_base(2,1))/2 * detB;
-%             A_uy_vy(i, j)   = mat_base(2,2) * detB;
-%         end
-%     end
-%     A_grad = A_grad + tril(A_grad, -1)';
-%     A_ux_vx = A_ux_vx + tril(A_ux_vx, -1)';
-%     A_ux_vy = A_ux_vy + tril(A_ux_vy, -1)';
-%     A_uy_vy = A_uy_vy + tril(A_uy_vy, -1)';
-    
-%     A_L2 = (M_ip_basis_ij + tril(M_ip_basis_ij, -1)') * detB;
-    
-%     edge_idx = tri2edge(k, :);
-%     edge_vec = vert(vert_idx([2,3,1]), :) - vert(vert_idx([3,1,2]), :);
-%     local_edge_start_vert = [2, 3, 1];
-%     map_dof_idx_l2g = zeros(nbasis, 1);
-%     map_dof_idx_l2g(1:3) = vert_idx;
-%     for i = 1:3
-%         if edge(edge_idx(i), 1) == vert_idx(local_edge_start_vert(i))
-%             map_dof_idx_l2g(3+(lagrange_order-1)*(i-1)+1:3+(lagrange_order-1)*i) = nv+(lagrange_order-1)*(edge_idx(i)-1)+1:1:nv+(lagrange_order-1)*edge_idx(i);
-%         else
-%             map_dof_idx_l2g(3+(lagrange_order-1)*(i-1)+1:3+(lagrange_order-1)*i) = nv+(lagrange_order-1)*edge_idx(i):-1:nv+(lagrange_order-1)*(edge_idx(i)-1)+1;
-%         end
-%     end
-%     map_dof_idx_l2g(3+(lagrange_order-1)*3+1:end) = nv + (lagrange_order-1)*ne + ...
-%                                                     ((lagrange_order-1)*(lagrange_order-2)/2*(k-1)+1:(lagrange_order-1)*(lagrange_order-2)/2*k);
-    
-%     A_glob_grad(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_grad(map_dof_idx_l2g, map_dof_idx_l2g) + A_grad;
-%     A_glob_ux_ux(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_ux_ux(map_dof_idx_l2g, map_dof_idx_l2g) + A_ux_vx;
-%     A_glob_ux_uy(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_ux_uy(map_dof_idx_l2g, map_dof_idx_l2g) + A_ux_vy;
-%     A_glob_uy_uy(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_uy_uy(map_dof_idx_l2g, map_dof_idx_l2g) + A_uy_vy;
-%     A_glob_L2(map_dof_idx_l2g, map_dof_idx_l2g) = A_glob_L2(map_dof_idx_l2g, map_dof_idx_l2g) + A_L2;
-
-%     for i = 1:3
-%         if is_edge_bd(edge_idx(i)) == 1
-%             M(map_dof_idx_l2g, map_dof_idx_l2g) = M(map_dof_idx_l2g, map_dof_idx_l2g) + sqrt(edge_vec(i, :)*edge_vec(i, :)') * M_ip_basis_edge_ij_all{i, 1};
-%         end
-%     end
-% end
-
-% bd_dof_idx=find(diag(M)>0);
-
-% A_glob_grad(bd_dof_idx,:)=[]; A_glob_grad(:,bd_dof_idx)=[];
-% A_glob_ux_ux(bd_dof_idx,:)=[]; A_glob_ux_ux(:,bd_dof_idx)=[];
-% A_glob_ux_uy(bd_dof_idx,:)=[]; A_glob_ux_uy(:,bd_dof_idx)=[];
-% A_glob_uy_uy(bd_dof_idx,:)=[]; A_glob_uy_uy(:,bd_dof_idx)=[];
-% A_glob_L2(bd_dof_idx,:)=[];   A_glob_L2(:,bd_dof_idx)=[];
-% end
-
+%===============================================================================
+% The code below is the same to the ones in laplace_eig_lagrange.m
+%===============================================================================
 
 function M_ip = Lagrange_inner_product_L1L2L3_all(lagrange_order)
 ijk = create_ijk(lagrange_order);

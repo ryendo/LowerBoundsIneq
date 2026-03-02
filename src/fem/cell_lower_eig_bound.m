@@ -1,46 +1,20 @@
 function eig_bounds = cell_lower_eig_bound(cell_data)
-% CELL_LOWER_EIG_BOUND: Compute lower bounds for eigenvalues using CR or LG method
-%
-% Paper Reference: Lemma 3.1 (Eigenvalue bounds via Crouzeix-Raviart)
-%   lambda_k >= lambda_k_h / (1 + C^2 * h^2 * lambda_k_h)
-%   where C = 0.1893 for CR elements
-%
-% Inputs:
-%   cell_data: structure with fields:
-%     - x_inf, x_sup, theta_inf, theta_sup: geometry parameters (strings)
-%     - mesh_size_lower_cr: mesh size for CR method
-%     - isLG: use Lehmann-Goerisch (1) or CR (0)
-%     - mesh_size_lower_LG, fem_order_lower_LG: LG parameters (if isLG=1)
-%     - neig (optional): number of eigenvalues to compute (default: 1)
-%
-% Outputs:
-%   eig_bounds: lower bounds for eigenvalues (vector of length neig)
-%
-% Author: Based on paper by R. Endo, X. Liu, P. Mariano
-% Date: 2025-01-14 (modified for J1/J2 evaluation)
 
-    % Extract geometry
+    % Extract geometry    
     x1 = I_intval(cell_data.x_inf);
     x2 = I_intval(cell_data.x_sup);
     t1 = I_intval(cell_data.theta_inf);
     t2 = I_intval(cell_data.theta_sup);
-
+    
     % Calculate vertices
     a1 = x1;  b1 = x1 * tan(t1);
     a2 = x1;  b2 = x1 * tan(t2);
     a3 = x2;  b3 = x2 * tan(t1);
     a4 = x2;  b4 = x2 * tan(t2);
-
-    % Extract mesh/FEM parameters
+    
+    % Extract mesh/FEM parameters    
     mesh_size_rho = cell_data.mesh_size_lower_cr;
-
-    % Number of eigenvalues to compute (default: 1 for J evaluation)
-    if isfield(cell_data, 'neig')
-        neig = cell_data.neig;
-    else
-        neig = 1;  % Default to lambda_1 only for J1/J2 evaluation
-    end
-
+    
     isLG = I_mid(cell_data.isLG);
 
     if isLG
@@ -53,7 +27,9 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         
         % Step 1: Preliminary CR calculation to get shift parameter 'rho'
         % -------------------------------------------------------------
-        % Note: neig is now parameterized (default: 1 for J evaluation)
+        % Note: Hardcoded parameters for the preliminary step as per original code
+        % or utilize parameters if needed. Here we follow the snippet logic.
+        neig = 1;
         
         % Geometry for mesh generation (using outer corner a4, b4)
         a = a4;
@@ -94,7 +70,7 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         [~, idx] = sort(I_mid(temp_bounds));
         temp_bounds = temp_bounds(idx);
 
-        % Select rho (shift) from the 2nd eigenvalue approximation
+        % Select rho (shift) from the 4th eigenvalue approximation
         rho = temp_bounds(2);
         
         % Step 2: High-order Lehmann-Goerisch Setup
@@ -105,9 +81,7 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
                       a,             b];
                       
         % Make mesh for LG
-        % mesh_LG = make_mesh_by_gmsh(a, b, mesh_size_LG);
-        blockK = 100;
-        mesh_LG = make_mesh_by_gmsh(a, b, mesh_size_LG, blockK, false, 'LG');
+        mesh_LG = make_mesh_by_gmsh(a, b, mesh_size_LG);
         vert_LG = mesh_LG.nodes;
         edge_LG = mesh_LG.edges;
         tri_LG  = mesh_LG.elements;
@@ -146,6 +120,7 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         mus = I_eig(AL, BL, neig);
 
         % Apply Lehmann-Goerisch Theorem
+        
         LG_eig_low = rho - rho ./ (1 - mus(end:-1:1));
         
         % Sort and extract
@@ -155,18 +130,17 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         eig_bounds_ = I_intval(LG_eig_low);
         [~, idx] = sort(I_mid(eig_bounds_));
         eig_bounds = I_inf(eig_bounds_(idx)');
+        eig_bounds = eig_bounds(1);
 
     else    
         % =========================================================
         % Standard CR Mode (isLG == 0)
         % =========================================================
-        % neig is already set above (parameterized, default: 1)
+        neig = 3;
         a_ = a4;
         b_ = b4;
         
-        % mesh_rho = make_mesh_by_gmsh(a_, b_, mesh_size_rho);
-        blockK = 100;
-        mesh_rho = make_mesh_by_gmsh(a_, b_, mesh_size_rho, blockK, false, 'rho');
+        mesh_rho = make_mesh_by_gmsh(a_, b_, mesh_size_rho);
         vert_rho = mesh_rho.nodes;
         edge_rho = mesh_rho.edges;
         tri_rho  = mesh_rho.elements;
@@ -199,7 +173,6 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         % Compute validated lower bounds using CR error estimate
         eig_bounds_full = CR_eig ./ (1 + CR_eig .* (Ch_val^2));
 
-        % Return requested number of eigenvalue bounds
-        eig_bounds = I_inf(eig_bounds_full(1:neig));
+        eig_bounds = I_inf(eig_bounds_full(1));
     end
 end

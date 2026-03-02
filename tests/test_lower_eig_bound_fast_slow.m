@@ -36,11 +36,11 @@
 
 format long infsup
 
-nEig = 3;
+nEig = 1;
 lagrange_order = 3;
 
-meshCR = make_mesh_by_gmsh(0.5, sqrt(3)/2, 0.1);
-meshCG = make_mesh_by_gmsh(0.5, sqrt(3)/2, 0.2);
+meshCR = make_mesh_by_gmsh(intval('0.5'), sqrt(intval('3'))/2, 0.1);
+meshCG = make_mesh_by_gmsh(intval('0.5'), sqrt(intval('3'))/2, 0.2);
 
 
 tic
@@ -59,7 +59,7 @@ tri  = meshCG.elements;
 bd   = meshCG.boundary_edges;
 
 tic
-[eig_value, eig_func_no_bdry, eig_func_with_bdry, A_grad, A_L2, A_xx, A_xy, A_yy, bd_dof_idx] = laplace_eig_lagrange_detailed(lagrange_order, vert, edge, tri, bd, neig);
+[eig_value, eig_func_no_bdry, eig_func_with_bdry, A_grad, A_L2, A_xx, A_xy, A_yy, bd_dof_idx] = laplace_eig_lagrange_detailed(lagrange_order, vert, edge, tri, bd, nEig);
 toc
 
 I_sup(eig_value)'

@@ -28,12 +28,12 @@ function [verified, J_lower, diagnostics] = verify_J_positive(conjecture_type, c
 cell_data_lam1 = cell_data;
 cell_data_lam1.neig = 1;
 
-fprintf('  Computing lambda_1 lower bound...\n');
+% fprintf('  Computing lambda_1 lower bound...\n');
 lam1_lower = cell_lower_eig_bound(cell_data_lam1);
-fprintf('    lambda_1 lower bound: %.17f\n', lam1_lower(1));
+% fprintf('    lambda_1 lower bound: %.17f\n', lam1_lower(1));
 
 %% Step 2: Compute geometry bounds (area and perimeter)
-fprintf('  Computing geometry bounds...\n');
+% fprintf('  Computing geometry bounds...\n');
 
 % Convert cell_data to strings if necessary
 if isnumeric(cell_data.x_inf)
@@ -60,24 +60,24 @@ end
 [area_bounds, perimeter_bounds] = compute_geometry_bounds(x_inf_str, x_sup_str, ...
     theta_inf_str, theta_sup_str);
 
-fprintf('    Area bounds: [%.17f, %.17f]\n', area_bounds(1), area_bounds(2));
-fprintf('    Perimeter bounds: [%.17f, %.17f]\n', perimeter_bounds(1), perimeter_bounds(2));
+% fprintf('    Area bounds: [%.17f, %.17f]\n', area_bounds(1), area_bounds(2));
+% fprintf('    Perimeter bounds: [%.17f, %.17f]\n', perimeter_bounds(1), perimeter_bounds(2));
 
 %% Step 3: Compute J lower bound
-fprintf('  Computing J lower bound...\n');
+% fprintf('  Computing J lower bound...\n');
 
 [J_lower, J_diag] = compute_J_lower_bound(conjecture_type, lam1_lower(1), ...
     area_bounds, perimeter_bounds);
 
-fprintf('    J lower bound: %.10e\n', J_lower);
+% fprintf('    J lower bound: %.10e\n', J_lower);
 
 %% Step 4: Determine verification status
 verified = (J_lower > 0);
 
 if verified
-    fprintf('  Result: VERIFIED (J >= 0)\n');
+    % fprintf('  Result: VERIFIED (J >= 0)\n');
 else
-    fprintf('  Result: NOT VERIFIED (J_lower = %.10e <= 0)\n', J_lower);
+    % fprintf('  Result: NOT VERIFIED (J_lower = %.10e <= 0)\n', J_lower);
 end
 
 %% Prepare diagnostics

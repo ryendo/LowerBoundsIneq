@@ -1,6 +1,6 @@
 function [is_verified, results, diagnostics] = Algorithm3_VerifyOmegaMid( ...
     conjecture_type, cell_def_file, verbose, cell_range)
-% ALGORITHM3_VERIFYOMEGAMID: Verify conjecture in Omega_mid region (NO RESUME / NO CSV)
+% ALGORITHM3_VERIFYOMEGAMID: Verify conjecture in Omega_mid region
 %
 % Inputs (all required):
 %   conjecture_type: 'J1' or 'J2'
@@ -26,7 +26,36 @@ end
 %% ========================================================================
 %  STEP 2-1: Read cell definitions
 %  ========================================================================
-cell_data = readtable(cell_def_file);
+
+persistent CELLDEF_CACHE_KEY CELLDEF_CACHE_TABLE
+
+% --- normalize path (string -> char) ---
+fpath = char(cell_def_file);
+
+% --- if relative path / on MATLAB path, resolve it ---
+if ~isfile(fpath)
+    alt = which(fpath);
+    if ~isempty(alt)
+        fpath = alt;
+    end
+end
+
+% --- file stat for cache key ---
+d = dir(fpath);
+if isempty(d)
+    error('Algorithm3_VerifyOmegaMid:CellDefNotFound', 'cell_def_file not found: %s', fpath);
+end
+d = d(1);
+
+cache_key = sprintf('%s|%.15g|%d', fpath, d.datenum, d.bytes);
+
+% --- cache load ---
+if isempty(CELLDEF_CACHE_KEY) || ~strcmp(CELLDEF_CACHE_KEY, cache_key) || isempty(CELLDEF_CACHE_TABLE)
+    CELLDEF_CACHE_TABLE = readtable(fpath);
+    CELLDEF_CACHE_KEY   = cache_key;
+end
+
+cell_data = CELLDEF_CACHE_TABLE;
 n_cells_total = height(cell_data);
 
 % Determine cell range to process (indices in the file order)

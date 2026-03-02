@@ -1,4 +1,4 @@
-function [W, BX] = RT_Hdiv_problem_dirichlet_fast(RT_order, Lagrange_order, vert, edge, tri, bd, uhs, lambda_hat)
+function [p, g_RTRT] = RT_Hdiv_problem_dirichlet(RT_order, Lagrange_order, vert, edge, tri, bd, uhs)
 
 % dim of f: ne * (RT_order+1)
 ne = size(edge, 1);
@@ -17,9 +17,7 @@ nv = size(vert, 1);
 
 
 [g_RTRT,g_XdivRT,g_XX] = RT_Hdiv_stiff_matrix(RT_order, Lagrange_order, vert, edge, tri, tri2edge);
-A = [g_RTRT, g_XdivRT'; g_XdivRT, zeros(size(g_XX))];
-lenRT = size(g_RTRT,1);
-lenX  = size(g_XX,1);
+A=[g_RTRT,g_XdivRT';g_XdivRT,zeros(size(g_XX))];
 len_g_RTRT = length(g_RTRT);
 
 
@@ -27,27 +25,15 @@ len_g_RTRT = length(g_RTRT);
 %     disp('solve fem system...');
 % end
 
+
 [~,neig]=size(uhs);
-
-W = I_zeros(lenRT + lenX, neig);
-A_approx = I_mid(A);
-
-for i = 1:neig
-    % (1) approximate solve for w^(1) (RT coefficients)
-    F_approx  = I_mid([zeros(lenRT,1); -g_XX * uhs(:,i)]);
-    pg_approx = A_approx \ F_approx;
-    w1 = pg_approx(1:lenRT);
-
-    % (2) compute w^(2) := (-div w^(1) - u)/lambda_hat  in the X-space coefficients
-    % Here "div w1" in X-coordinates is represented by (g_XX \ (g_XdivRT*w1))
-    div_w1_coeff = g_XX \ (g_XdivRT * w1);
-    w2 = (-div_w1_coeff - uhs(:,i)) / lambda_hat;
-
-    W(:,i) = [w1; w2];
+p=[];
+for i=1:neig
+    F = [zeros(len_g_RTRT,1);-g_XX*uhs(:,i)];
+    pg = A\F;
+    p = [p,pg(1:len_g_RTRT)];
 end
 
-% b({a,s},{c,t}) = (a,c) + lambda_hat (s,t)
-BX = blkdiag(g_RTRT, lambda_hat * g_XX);
 
 end
 
@@ -482,3 +468,5 @@ if i<0 || j<0 || k<0
     idx = [];
 end
 end
+
+
