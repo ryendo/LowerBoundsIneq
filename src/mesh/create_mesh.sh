@@ -9,4 +9,8 @@ export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
 # Optional: clear MATLAB’s library path if called from MATLAB
 unset LD_LIBRARY_PATH
 
-${gmsh_command} ${mesh_path}/temp.geo -2 -format msh2 -o ${mesh_path}/temp.msh 
+# ${gmsh_command} ${mesh_path}/temp.geo -2 -format msh2 -bin 0 -o ${mesh_path}/temp.msh
+
+${gmsh_command} ${mesh_path}/temp.geo -2 -format msh2 -o ${mesh_path}/temp.msh \
+  -setnumber Mesh.Binary 0 \
+  -setnumber Mesh.ElementOrder 1

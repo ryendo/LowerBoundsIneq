@@ -341,16 +341,15 @@ classdef VerificationRunner < handle
                 % Append immediately (default behavior)
                 if obj.save_intermediate
                     fid = fopen(f,'a');
-                    if fid >= 0
+                    if fid < 0
+                        warning('Cannot open: %s', f);
+                    else
+                        c = onCleanup(@() fclose(fid));
                         ts = datestr(now,'yyyy-mm-dd HH:MM:SS');
 
-                        fid = fopen(f,'a');
                         fprintf(fid,'%s,%d,%d,%.17e,"%s","%s",%s\n', ...
                             conjecture_type, double(cid), double(verified), double(Jlb), ...
                             csvEsc(status), csvEsc(note), ts);
-                        fclose(fid);
-                    else
-                        warning('Cannot open: %s', f);
                     end
                 end
             end

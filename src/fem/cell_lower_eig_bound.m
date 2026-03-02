@@ -105,7 +105,9 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
                       a,             b];
                       
         % Make mesh for LG
-        mesh_LG = make_mesh_by_gmsh(a, b, mesh_size_LG);
+        % mesh_LG = make_mesh_by_gmsh(a, b, mesh_size_LG);
+        blockK = 100;
+        mesh_LG = make_mesh_by_gmsh(a, b, mesh_size_LG, blockK, false, 'LG');
         vert_LG = mesh_LG.nodes;
         edge_LG = mesh_LG.edges;
         tri_LG  = mesh_LG.elements;
@@ -162,7 +164,9 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         a_ = a4;
         b_ = b4;
         
-        mesh_rho = make_mesh_by_gmsh(a_, b_, mesh_size_rho);
+        % mesh_rho = make_mesh_by_gmsh(a_, b_, mesh_size_rho);
+        blockK = 100;
+        mesh_rho = make_mesh_by_gmsh(a_, b_, mesh_size_rho, blockK, false, 'rho');
         vert_rho = mesh_rho.nodes;
         edge_rho = mesh_rho.edges;
         tri_rho  = mesh_rho.elements;

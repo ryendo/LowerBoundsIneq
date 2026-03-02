@@ -23,10 +23,6 @@ function [verified, J_lower, diagnostics] = verify_J_positive(conjecture_type, c
 % Author: Based on paper by R. Endo, X. Liu, P. Mariano
 % Date: 2025-01-14
 
-% Add paths
-addpath('../FEM_Functions');
-addpath('../mode_swith_interface');
-
 %% Step 1: Compute lambda_1 lower bound
 % Set neig = 1 for efficiency (only lambda_1 needed for J evaluation)
 cell_data_lam1 = cell_data;
