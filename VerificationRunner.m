@@ -31,7 +31,7 @@ classdef VerificationRunner < handle
         ord_LG = 3;              % (fixed) Lagrange order for LG lower bound
 
         % Algorithm 2 grid parameters (Omega_up)
-        Nx = 100; % (fixed)
+        Nx = 200; % (fixed)
         Ny = 200; % (fixed)
         Ny_axis = 200; % (fixed)
 
