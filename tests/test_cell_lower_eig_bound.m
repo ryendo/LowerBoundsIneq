@@ -44,7 +44,7 @@ assert(all(isfinite(lb_cr)) && all(lb_cr > 0), 'CR lower bound invalid');
 % ============================================================
 cell_lg = cell_base;
 cell_lg.isLG = 1;
-cell_lg.mesh_size_lower_LG  = 0.1;  % very coarse mesh (as you observed: tris=4)
+cell_lg.mesh_size_lower_LG  = 0.5;  % very coarse mesh (as you observed: tris=4)
 cell_lg.fem_order_lower_LG  = 2;    % P2
 
 tic;

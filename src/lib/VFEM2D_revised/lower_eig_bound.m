@@ -92,15 +92,15 @@ function eig_bounds = lower_eig_bound(LagrangeOrder, meshCR, meshCG, nEig)
     %   BX  : matrix representing b_G(.,.) on X so that A2 = W' * BX * W
     %
     RTorder = LagrangeOrder;
-    [W, BX] = RT_Hdiv_problem_dirichlet( ...
-        RTorder, LagrangeOrder, vertCG, edgeCG, triCG, bdCG, U_with_bdry);
+    A2 = RT_Hdiv_problem_dirichlet( ...
+        meshCG,RTorder, U_with_bdry);
 
     % =============================================================
     % Step 4: Assemble LG matrices and solve interval generalized EVP
     % =============================================================
     A0 = U' * K_CG * U;   % (grad v_i, grad v_j)
     A1 = U' * M_CG * U;   % (v_i, v_j)
-    A2 = W' * BX * W;     % b_G(w_i, w_j)
+    % A2 = W' * BX * W;     % b_G(w_i, w_j)
 
     A = A0 - rho * A1;
     B = A0 - 2*rho * A1 + (rho*rho) * A2;

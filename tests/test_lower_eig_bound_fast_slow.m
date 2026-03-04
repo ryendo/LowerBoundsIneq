@@ -49,7 +49,7 @@ toc
 
 
 tic
-eig_bounds = lower_eig_bound_fast(lagrange_order, meshCR, meshCG, nEig)
+eig_bounds = lower_eig_bound(lagrange_order, meshCR, meshCG, nEig)
 toc
 
 

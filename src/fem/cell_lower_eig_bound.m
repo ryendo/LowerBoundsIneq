@@ -103,9 +103,7 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         RT_order = Lagrange_order;
         
         % Solve H(div) problem using Raviart-Thomas (RT) elements
-        [mat_pih, RTRT] = RT_Hdiv_problem_dirichlet(RT_order, Lagrange_order, vert_LG, edge_LG, tri_LG, bd_LG, LA_eigf_with_bdry);
-
-        A2 = mat_pih' * RTRT * mat_pih;
+        A2  = RT_Hdiv_problem_dirichlet(mesh_LG, RT_order, LA_eigf_with_bdry);
         
         % Matrices for Generalized Eigenvalue Problem
         AL = A0 - rho * A1;
