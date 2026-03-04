@@ -1,4 +1,4 @@
-function [lami, dlami, ddlam_i_lower_bound] = calc_ddlami_lower_bound(i, base_triangle, triangle, e_direction, N_spectral, N_LG, N_rho, fem_ord, fem_ord_LG)
+function [lami, dlami, ddlam_i_lower_bound] = calc_ddlami_lower_bound(i, base_triangle, triangle, e_direction, N_spectral, N_LG, N_rho, fem_ord_LG)
 % CALC_DDLAMI_LOWER_BOUND
 % Computes a rigorous lower bound for the second-order directional shape
 % derivative of the i-th Dirichlet eigenvalue on a triangle, using validated
@@ -44,7 +44,7 @@ num_eigs_needed = N_spectral + 1;
 format long infsup
 
 [lams_raw, uh_list, A, B, A_xx, A_xy, A_yy] = ...
-    calc_eigen_bounds_any_order_1k_wh(num_eigs_needed, base_triangle, N_LG, N_rho, fem_ord, fem_ord_LG);
+    calc_eigen_bounds_any_order_1k_wh(num_eigs_needed, base_triangle, N_LG, N_rho, fem_ord_LG);
 
 % fprintf('    done.\n');
 
@@ -120,7 +120,7 @@ dlami = I_hull(dlamih - e_dlami, dlamih + e_dlami);
 % fprintf('    done.\n');
 
 %======================================================================
-% STEP 2: COMPUTE widehat(ddot(lambda_{i,N}^p)) (paper's truncated spectral approximation)
+% STEP 2: COMPUTE widehat(ddot(lambda_{i,N}^p))
 %======================================================================
 % fprintf('  > Step 2: Computing widehat(ddot(lambda_{%d,%d}^p))...\n', i, N_spectral);
 
@@ -196,6 +196,7 @@ end
 % Final rigorous lower bound
 ddlam_i_lower_bound = ddlam_i_N_h - E_approx;
 
+
 % fprintf('    done.\n');
 
 try
@@ -207,9 +208,7 @@ try
             '%s', 'Tail bound skipped: lambda_{N+1}-lambda_i is not provably positive.');
     else
         norm_dP_F = norm(mat_dP, 'fro');    % ||dot P||_F
-        R_tail_ub = 2 * (norm_dP_F^2) * (lami^2) / den_tail;
-
-        fprintf('  - sup( tail bound R_N )            : %e\n', I_sup(R_tail_ub));
+        R_tail_ub = 2 * (norm_dP_F^2) * (lami^2) / den_tail;        
 
         if I_inf(R_tail_ub) < 0
             warning('calc_ddlami_lower_bound:TailBoundNegativeInf', ...
@@ -223,10 +222,15 @@ catch ME
     warning(ME.identifier, '%s', ME.message);
 end
 
+
 fprintf('--- Calculation complete for ddot(lambda_%d) ---\n', i);
+
 fprintf('  - mid( widehat(ddot(lambda_{i,N})) ): %f\n', I_mid(ddlam_i_N_h));
-fprintf('  - sup( rigorous upper bound ): %f\n', I_sup(ddlam_i_upper_bound));
 fprintf('  - inf( rigorous lower bound ): %f\n\n', I_inf(ddlam_i_lower_bound));
+fprintf('  - sup( tail bound R_N )            : %e\n', I_sup(R_tail_ub));
+fprintf('  - sup( rigorous upper bound ): %f\n', I_sup(ddlam_i_upper_bound));
+
+
 
 
 end

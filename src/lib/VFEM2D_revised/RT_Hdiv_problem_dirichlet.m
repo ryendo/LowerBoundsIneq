@@ -1,4 +1,4 @@
-function [mat_b_w_w] = RT_Hdiv_problem(mesh, RT_order, f)
+function [mat_b_w_w] = RT_Hdiv_problem_dirichlet(mesh, RT_order, f)
     % dim of f: ne * (RT_order+1)
     global INTERVAL_MODE
 
@@ -15,8 +15,6 @@ function [mat_b_w_w] = RT_Hdiv_problem(mesh, RT_order, f)
     end
     % A = RT_Hdiv_stiff_matrix(RT_order, vert, edge, tri, tri2edge);
     [A,B] = RT_mixed_matrix(RT_order, vert, edge, tri,tri2edge);
-    disp("Size of matrix for RT:")
-    disp(size(A,1))    
     
     if nt > 1000
         disp('deal with boundary condition...');
@@ -37,7 +35,7 @@ function [mat_b_w_w] = RT_Hdiv_problem(mesh, RT_order, f)
     %% Stardard way to calculate mat_b_w_w (w: Goerisch w term)
         m = size(B,2);
         n = size(A,1);
-        mat_mixed = sparse([A,B;B', zeros(m,m)]);
+        mat_mixed = sparse([A,B;B', I_zeros(m,m)]);
         f_mixed = I_zeros(size(mat_mixed,1), size(f,2));
         f_mixed(n+1:end,:) = - F;
         if nt > 1000
@@ -64,7 +62,7 @@ function F = RT_mixed_set_f(RT_order, vert, edge, tri, tri2edge, f)
     nt = size(tri,  1);
     nv = size(vert,1);
 
-    M_ip_L2 = zeros(n_dg_elt, n_dg_elt);
+    M_ip_L2 = I_zeros(n_dg_elt, n_dg_elt);
     for i = 1:n_dg_elt
         ei = Lagrange_create_coord_basis(basis, i, Lagrange_order);
         for j = 1:n_dg_elt            
@@ -136,7 +134,7 @@ function [mat_A,mat_B] = RT_mixed_matrix(RT_order, vert, edge, tri,tri2edge)
     n_dg = nt*n_dg_elt; 
 
     M_ip_basis_ijT_all = cell(nbasis);
-    M_ip_div_dg = zeros(nbasis, n_dg_elt);
+    M_ip_div_dg = I_zeros(nbasis, n_dg_elt);
     for i = 1:nbasis
         ei = RT_create_coord_basis(basis_abc, basis_ijk, i, RT_order);
         for j = i:nbasis
@@ -198,7 +196,7 @@ end
 function M = RT_inner_product_L1L2L3_all(RT_order)
     ijk = create_ijk(RT_order);
     len = size(ijk, 1);
-    M = zeros(len, len);
+    M = I_zeros(len, len);
     for p = 1:len
         for q = p:len
             pi = ijk(p, 1);
@@ -215,7 +213,7 @@ end
 
 function e = RT_create_coord_basis(basis_abc, basis_ijk, idx, RT_order)
     len = RT_get_Bernstein_polynomial_nbasis(RT_order + 1);
-    e = zeros(len, 2);
+    e = I_zeros(len, 2);
     
     a = basis_abc(idx, 1);
     b = basis_abc(idx, 2);
@@ -235,8 +233,8 @@ end
 
 function e = RT_create_coord_basis_div(basis_abc, basis_ijk, idx, RT_order)
 len = RT_get_Bernstein_polynomial_nbasis(RT_order);
-e = zeros(len, 1);
-f = zeros(len, 1);
+e = I_zeros(len, 1);
+f = I_zeros(len, 1);
 
 a = basis_abc(idx, 1);
 b = basis_abc(idx, 2);
@@ -402,7 +400,7 @@ function nbasis = RT_get_nbasis(RT_order)
 end
 
 function y = RT_integral_L1L2L3_ijk(i, j, k)
-y = factorial(i) * factorial(j) * factorial(k) / factorial(i+j+k+2);
+y = factorial(i) * factorial(j) * factorial(k) / I_intval(factorial(i+j+k+2));
 end
 
 %%%%%%% For lagrange element %%%%%%%%
@@ -421,7 +419,7 @@ end
 
 
 function ijk = LG_create_ijk(n)
-ijk = zeros((n+1)*(n+2)/2, 3);
+ijk = I_zeros((n+1)*(n+2)/2, 3);
 index = 1;
 for p = n : -1 : 0
     for q = n-p : -1 : 0

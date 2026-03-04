@@ -1,5 +1,0 @@
-conjecture,cell_id,verified,J_lower,status,note,run_timestamp
-J1,1,1,9.93142227704879588e-03,"ok","",2026-03-01 08:09:59
-J1,2,NaN,NaN,"error","Unrecognized function or variable 'is_verified_cell'.",2026-03-02 12:28:14
-J1,3,NaN,NaN,"error","Unrecognized function or variable 'is_verified_cell'.",2026-03-02 12:28:19
-J1,4,1,9.90911634452551482e-03,"ok","",2026-03-02 12:30:10

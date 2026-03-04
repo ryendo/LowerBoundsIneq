@@ -19,7 +19,7 @@ cell_base.theta_inf = I_pi/3;
 cell_base.theta_sup = I_pi/3;
 
 % For speed in a test you can try 0.06~0.10
-cell_base.mesh_size_lower_cr = 0.08;
+cell_base.mesh_size_lower_cr = 0.02;
 
 % only lambda_1 lower bound
 cell_base.neig = 1;
@@ -44,8 +44,8 @@ assert(all(isfinite(lb_cr)) && all(lb_cr > 0), 'CR lower bound invalid');
 % ============================================================
 cell_lg = cell_base;
 cell_lg.isLG = 1;
-cell_lg.mesh_size_lower_LG  = 0.5;  % very coarse mesh (as you observed: tris=4)
-cell_lg.fem_order_lower_LG  = 2;    % P2
+cell_lg.mesh_size_lower_LG  = 0.1;  % very coarse mesh (as you observed: tris=4)
+cell_lg.fem_order_lower_LG  = 4;    % P2
 
 tic;
 lb_lg = cell_lower_eig_bound(cell_lg);

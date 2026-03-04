@@ -89,7 +89,8 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         is_bnd_lg = ismember(edge_LG, bd_LG, 'rows');
         
         
-        Lagrange_order = cell_data.fem_order_lower_LG;
+        % Lagrange_order = cell_data.fem_order_lower_LG;
+        Lagrange_order = 2;
 
         % Compute High-Order Upper Bounds & Eigenfunctions (Lagrange)
         [LA_eig, LA_eigf, LA_eigf_with_bdry, LA_A, LA_M, ~, ~, ~, ~] = ...
@@ -128,7 +129,7 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         eig_bounds_ = I_intval(LG_eig_low);
         [~, idx] = sort(I_mid(eig_bounds_));
         eig_bounds = I_inf(eig_bounds_(idx)');
-        eig_bounds = eig_bounds(1);
+        eig_bounds = eig_bounds(1)
 
     else    
         % =========================================================

@@ -50,7 +50,7 @@ fprintf('================================================================\n');
 fprintf('ALGORITHM 2 (Step 1): Ω_up verification (paper-matched algorithms)\n');
 fprintf('================================================================\n');
 fprintf('Conjecture: %s\n', conjecture_type);
-fprintf('eps_up = %.17g', eps_up);
+fprintf('eps_up = %.17g\n', eps_up);
 fprintf('Nx=%d, Ny=%d (rect grid), Ny_axis=%d (axis intervals), N_spec=%d\n', Nx, Ny, Ny_axis, N_spec);
 fprintf('Interval mode: %d\n\n', INTERVAL_MODE);
 
@@ -142,7 +142,7 @@ min_so_far = +Inf;
 for i = 1:Nx
     for j = 1:Ny
         % Cell R_ij: x in [x_i, x_{i+1}], y in [y_{j+1}, y_j]
-        fprintf('cell verification:[i,j]=[%d,%d]', i,j);
+        fprintf('cell verification:[i,j]=[%d,%d]\n', i,j);
         x_lo = x_nodes(i);
         x_hi = x_nodes(i+1);
 
@@ -251,11 +251,11 @@ yI = I_hull(box.y(1), box.y(2));
 base_triangle = [0, 0, 1, 0, box.x(1), box.y(1)];
 triangle      = [0, 0, 1, 0, xI, yI];
 
-[N_LG, N_rho, fem_ord, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
+[N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
 
 [~, ~, ddlambda_lower] = calc_ddlami_lower_bound( ...
     1, base_triangle, triangle, e_direction, ...
-    N_spec, N_LG, N_rho, fem_ord, fem_ord_LG);
+    N_spec, N_LG, N_rho, fem_ord_LG);
 
 % ------------------------------------------------------------------------
 % [Lower bound of ∂²J_k/∂x²] via Lemma (Jkxx-simple):
@@ -410,14 +410,14 @@ yI = I_hull(box.y(1), box.y(2));
 % [Lower bound of ∂²λ1/∂y²] and [lower bound of ∂λ1/∂y]
 % using calc_ddlami_lower_bound at the anchor triangle
 % ------------------------------------------------------------------------
-base_triangle = [0, 0, 1, 0, I_intval('0.5'), sqrt(I_intval('3'))/2];
-triangle      = [0, 0, 1, 0, xI, yI];
+base_triangle = [0, 0, I_intval('1'), 0, I_intval('0.5'), sqrt(I_intval('3'))/2];
+triangle      = [0, 0, I_intval('1'), 0, xI, yI];
 
-[N_LG, N_rho, fem_ord, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
+[N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
 
 [~, dlambdaI, ddlambda_lower] = calc_ddlami_lower_bound( ...
     1, base_triangle, triangle, e_direction, ...
-    N_spec, N_LG, N_rho, fem_ord, fem_ord_LG);
+    N_spec, N_LG, N_rho, fem_ord_LG);
 
 % Certified lower bound for ∂λ1/∂y over the anchor computation
 dotlambda_lower = I_intval((I_inf(dlambdaI)));
@@ -504,11 +504,11 @@ end
 % ========================================================================
 % Mesh parameter extraction for calc_ddlami_lower_bound
 % ========================================================================
-function [N_LG, N_rho, fem_ord, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params)
+function [N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params)
 % Minimal helper to keep the Algorithm2 interface unchanged.
 %
 % Required fields for calc_ddlami_lower_bound:
-%   N_LG, N_rho, fem_ord, fem_ord_LG
+%   N_LG, N_rho, fem_ord_LG
 %
 % If your project uses different field names, adapt them here (only here).
 
@@ -524,12 +524,6 @@ if isfield(mesh_params, 'N_rho')
     N_rho = mesh_params.N_rho;
 else
     error('mesh_params must contain N_rho.');
-end
-
-if isfield(mesh_params, 'fem_ord')
-    fem_ord = mesh_params.fem_ord;
-else
-    error('mesh_params must contain fem_ord.');
 end
 
 if isfield(mesh_params, 'fem_ord_LG')

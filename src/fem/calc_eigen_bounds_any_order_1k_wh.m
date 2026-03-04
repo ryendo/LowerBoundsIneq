@@ -1,111 +1,131 @@
-function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy] = calc_eigen_bounds_any_order_1k_wh(neig,tri_intval,N_LG,N_rho,ord,ord_LG)
+function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy] = calc_eigen_bounds_any_order_1k_wh(neig,tri_intval,N_LG,N_rho,LagrangeOrder)
 
-    mesh_size_LG = 1/N_LG;
+    % =============================================================
+    % Step 1: Compute rho <= lambda_{n+1} using CR + explicit C_h
+    % =============================================================
+    
     mesh_size_rho = 1/N_rho;
-    
-    % Step 1: Preliminary CR calculation to get shift parameter 'rho'
-    % -------------------------------------------------------------
-    
-    % Geometry for mesh generation
+
     a = tri_intval(5);
     b = tri_intval(6);
-    
-    mesh_rho = make_mesh_by_gmsh(a, b, mesh_size_rho);
-    vert_rho = mesh_rho.nodes;
-    edge_rho = mesh_rho.edges;
-    tri_rho  = mesh_rho.elements;
-    bd_rho   = mesh_rho.boundary_edges;
-    is_bnd = ismember(edge_rho, bd_rho, 'rows');
+        
+    meshCR = make_mesh_by_gmsh(a, b, mesh_size_rho);
 
-    global INTERVAL_MODE
-    tri_by_edge = find_tri2edge(tri_rho, edge_rho);
-    bd_edge_ids = find(is_bnd > 0);
-    
-    [A0, A1] = create_matrix_crouzeix_raviart(tri_rho, edge_rho, vert_rho, tri_by_edge);
-    
-    ne = size(edge_rho, 1);
-    dof_idx = 1:ne;
-    dof_idx(bd_edge_ids) = [];
-    
-    CR_A0 = A0(dof_idx, dof_idx);
-    CR_A1 = A1(dof_idx, dof_idx);
-    
-    hmax = find_mesh_hmax(vert_rho, edge_rho);
-    
+    vertCR = meshCR.nodes;
+    edgeCR = meshCR.edges;
+    triCR  = meshCR.elements;
+    bdCR   = meshCR.boundary_edges;
 
+    isBnd = ismember(edgeCR, bdCR, 'rows');
+    triByEdge = find_tri2edge(triCR, edgeCR);
+    bdEdgeIds = find(isBnd > 0);
+
+    [M_CR, K_CR] = create_matrix_crouzeix_raviart(triCR, edgeCR, vertCR, triByEdge);
+
+    nEdges = size(edgeCR, 1);
+    dof = 1:nEdges;
+    dof(bdEdgeIds) = [];
+
+    M_CR = M_CR(dof, dof);
+    K_CR = K_CR(dof, dof);
+
+    hmax = find_mesh_hmax(vertCR, edgeCR);
+
+    % Solve CR generalized eigenproblem: K u = lambda M u
+    global INTERVAL_MODE;
     if INTERVAL_MODE
-        CR_eig = veigs(CR_A1, CR_A0, neig, 'sm');
+        lamCR = veigs(K_CR, M_CR, neig + 1, 'sm');
+        Ch = I_intval('0.1893') * hmax;
     else
-        CR_eig = eigs(CR_A1, CR_A0, neig, 'sm');
+        lamCR = eigs(K_CR, M_CR, neig + 1, 'sm');
+        Ch = 0.1893 * hmax;
     end
-    
-    Ch_val = I_intval('0.1893') * hmax;
-    
-    % CR-based lower bounds
-    temp_bounds = CR_eig ./ (1 + CR_eig .* (Ch_val^2));
-    [~, idx] = sort(I_mid(temp_bounds));
-    temp_bounds = temp_bounds(idx);
 
-    rho = temp_bounds(neig);
+    % rho_j = lam_j / (1 + (Ch^2) * lam_j), then take rho = rho_{n+1}
+    rhoCand = lamCR ./ (1 + lamCR .* (Ch^2));
+    [~, idx] = sort(I_mid(rhoCand));
+    rhoCand = rhoCand(idx);
     
-    % Step 2: High-order Lehmann-Goerisch Setup
-    % -------------------------------------------------------------
-    % Define Triangle for LG
-    tri_intval = [I_intval('0'), I_intval('0'); ...
-                    I_intval('1'), I_intval('0'); ...
-                    a,             b];
-                    
-    % Make mesh for LG
-    mesh_LG = make_mesh_by_gmsh(a, b, mesh_size_LG);
-    vert_LG = mesh_LG.nodes;
-    edge_LG = mesh_LG.edges;
-    tri_LG  = mesh_LG.elements;
-    bd_LG   = mesh_LG.boundary_edges;
-    is_bnd_lg = ismember(edge_LG, bd_LG, 'rows');
-    
-    
-    Lagrange_order = ord_LG;
+    nCand = numel(I_mid(rhoCand));
+    if nCand < neig + 1
+        error('CR eigen computation returned too few eigenvalues.');
+    end
+    rho = rhoCand(neig + 1);
 
-    % Compute High-Order Upper Bounds & Eigenfunctions (Lagrange)
-    [LA_eig, LA_eigf, LA_eigf_with_bdry, LA_A, LA_M, A_xx, A_xy, A_yy, ~] = ...
-        laplace_eig_lagrange_detailed(Lagrange_order, vert_LG, edge_LG, tri_LG, bd_LG, neig);
+    % =============================================================
+    % Step 2: Compute CG (Lagrange) eigenpairs (upper bounds)
+    % =============================================================
 
-    A_grad = LA_A; A_L2 = LA_M;
+    mesh_size_LG = 1/N_LG;
+    meshCG = make_mesh_by_gmsh(a, b, mesh_size_LG);
 
-    % Step 3: Construct LG Matrices
-    % -------------------------------------------------------------
-    A0 = LA_eigf' * LA_A * LA_eigf;
-    A1 = LA_eigf' * LA_M * LA_eigf;
-    
-    RT_order = Lagrange_order;
-    
-    % Solve H(div) problem using Raviart-Thomas (RT) elements
-    [mat_pih, RTRT] = RT_Hdiv_problem_dirichlet(RT_order, Lagrange_order, vert_LG, edge_LG, tri_LG, bd_LG, LA_eigf_with_bdry);
+    vertCG = meshCG.nodes;
+    edgeCG = meshCG.edges;
+    triCG  = meshCG.elements;
+    bdCG   = meshCG.boundary_edges;
 
-    A2 = mat_pih' * RTRT * mat_pih;
-    
-    % Matrices for Generalized Eigenvalue Problem
-    AL = A0 - rho * A1;
-    BL = A0 - 2 * rho * A1 + rho * rho * A2;
-    
-    % Step 4: Solve Interval Generalized Eigenvalue Problem
-    % -------------------------------------------------------------
-    % Symmetrize via Interval Hull
-    AL = I_hull(AL, AL'); 
-    BL = I_hull(BL, BL');
+    % Expected outputs (as in your original code):
+    %   lamCG: neig-by-1 approximate eigenvalues (upper bounds)
+    %   U    : (dofs-by-neig) eigenfunctions on interior dofs
+    %   Ubd  : (full-dofs-by-neig) eigenfunctions including boundary dofs
+    %   K,M  : assembled stiffness/mass on the same interior dof basis as U
 
-    mus = I_eig(AL, BL, neig);
+    [lamCG, U, U_with_bdry, K_CG, M_CG, A_xx, A_xy, A_yy, ~] = ...    
+        laplace_eig_lagrange_detailed(LagrangeOrder, vertCG, edgeCG, triCG, bdCG, neig);
 
-    % Apply Lehmann-Goerisch Theorem
-    LG_eig_low = rho - rho ./ (1 - mus(end:-1:1));
-    
-    % Sort and extract
-    [~, idx] = sort(I_mid(LG_eig_low));
-    LG_eig_low = LG_eig_low(idx);
-    
-    eig_bounds_ = I_intval(LG_eig_low);
-    [~, idx] = sort(I_mid(eig_bounds_));
-    eig_bounds = eig_bounds_(idx)';
- 
+    LA_eigf=U; A_grad=K_CG; A_L2=M_CG;
+
+
+    Lambda = max(lamCG(1:neig)); % upper bound for lambda_n
+    if ~(I_sup(Lambda) < I_inf(rho))
+        warning(['Separation not verified (need Lambda < rho). ', ...
+                 'Refine meshes for CR and/or CG to enforce Lambda < rho.']);
+    end
+
+    % =============================================================
+    % Step 3: Build w_i = {w_i^(1), w_i^(2)}
+    % =============================================================
+    % IMPORTANT:
+    % RT_Hdiv_problem_dirichlet returns:
+    %   W   : coefficient matrix whose i-th column represents w_i in X
+    %   BX  : matrix representing b_G(.,.) on X so that A2 = W' * BX * W
+    %
+    RTorder = LagrangeOrder;
+    A2 = RT_Hdiv_problem_dirichlet(meshCG,RTorder,U_with_bdry);
+
+    % =============================================================
+    % Step 4: Assemble LG matrices and solve interval generalized EVP
+    % =============================================================
+    A0 = U' * K_CG * U;   % (grad v_i, grad v_j)
+    A1 = U' * M_CG * U;   % (v_i, v_j)
+
+    A = A0 - rho * A1;
+    B = A0 - 2*rho * A1 + (rho*rho) * A2;
+
+    % Symmetrize (interval I_hull if interval mode)
+    A = I_hull(A, A');
+    B = I_hull(B, B');
+
+    % Solve A x = mu B x for the smallest neig mu (should be negative)
+    mu = I_eig(A, B, neig);
+
+    if any(I_sup(mu) >= 0)
+        warning('Some mu are not verified negative. Check separation and assembly.');
+    end
+
+    % Lehmann–Goerisch bound:
+    %   lambda_i >= rho - rho/(1 - mu_{n+1-i})
+    muRev = mu(end:-1:1);
+    lamLow = rho - rho ./ (1 - muRev);
+
+    % Sort by I_midpoints and return verified lower endpoints
+    [~, idx] = sort(I_mid(lamLow));
+    lamLow = lamLow(idx)';
+
+    eig_bounds = I_hull(lamCG,lamLow); % 1-by-neig
+
+    % lamCG
+    % lamLow
+    % eig_bounds
+
 end
-

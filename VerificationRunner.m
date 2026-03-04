@@ -24,17 +24,16 @@ classdef VerificationRunner < handle
 
     properties
         % Parameters (paper notation)
-        eps_up = 4e-5;           % epsilon_up: Omega_up region threshold
-        N_spectral = 3;          % Number of spectral terms for ddlam computation
-        N_LG = 6;                % Mesh resolution for Lehmann-Goerisch
-        N_rho = 64;              % Mesh resolution for CR
-        ord = 4;                 % Lagrange order for upper bound
-        ord_LG = 3;              % Lagrange order for LG lower bound
+        eps_up = 0.12;           % (fixed) epsilon_up: Omega_up region threshold
+        N_spectral = 3;          % (fixed) Number of spectral terms for ddlam computation
+        N_LG = 9;                % (fixed) Mesh resolution for Lehmann-Goerisch
+        N_rho = 64;              % (fixed) Mesh resolution for CR
+        ord_LG = 3;              % (fixed) Lagrange order for LG lower bound
 
         % Algorithm 2 grid parameters (Omega_up)
-        Nx = 1;
-        Ny = 1;
-        Ny_axis = 1;
+        Nx = 100; % (fixed)
+        Ny = 200; % (fixed)
+        Ny_axis = 200; % (fixed)
 
         % Paths
         results_dir = 'results';
@@ -75,9 +74,9 @@ classdef VerificationRunner < handle
                 fprintf('VERIFICATION RUNNER INITIALIZED\n');
                 fprintf('================================================================\n');
                 fprintf('Parameters:\n');
-                fprintf('  eps_up: %.4f\n', obj.eps_up);
-                fprintf('  N_spectral: %d\n', obj.N_spectral);
-                fprintf('  N_LG: %d, N_rho: %d\n', obj.N_LG, obj.N_rho);
+                fprintf('  eps_up: %.17f\n', obj.eps_up);
+                fprintf('  N_spectral: %d\n', obj.N_spectral);                
+                fprintf('  ord_LG: %d, N_LG: %d, N_rho: %d\n',obj.ord_LG, obj.N_LG, obj.N_rho);
                 fprintf('  Algorithm2 grid: Nx=%d, Ny=%d, Ny_axis=%d\n', obj.Nx, obj.Ny, obj.Ny_axis);
                 fprintf('  use_interval_arithmetic: %d\n', obj.use_interval_arithmetic);
                 fprintf('  results_dir: %s\n', obj.results_dir);
@@ -94,7 +93,6 @@ classdef VerificationRunner < handle
             addParameter(p, 'N_spectral', obj.N_spectral);
             addParameter(p, 'N_LG', obj.N_LG);
             addParameter(p, 'N_rho', obj.N_rho);
-            addParameter(p, 'ord', obj.ord);
             addParameter(p, 'ord_LG', obj.ord_LG);
 
             % Algorithm 2 grid parameters (Omega_up)
@@ -114,7 +112,6 @@ classdef VerificationRunner < handle
             obj.N_spectral = p.Results.N_spectral;
             obj.N_LG = p.Results.N_LG;
             obj.N_rho = p.Results.N_rho;
-            obj.ord = p.Results.ord;
             obj.ord_LG = p.Results.ord_LG;
 
             obj.Nx = p.Results.Nx;
@@ -142,7 +139,6 @@ classdef VerificationRunner < handle
 
             mesh_params = struct('N_LG', obj.N_LG, ...
                                  'N_rho', obj.N_rho, ...
-                                 'fem_ord', obj.ord, ...
                                  'fem_ord_LG', obj.ord_LG);
 
             [~, results, diagnostics] = Algorithm2_VerifyOmegaUp( ...
@@ -154,7 +150,7 @@ classdef VerificationRunner < handle
                 fsum = fullfile(d, sprintf('%s_OmegaUp.csv', conjecture_type));
                 if ~exist(fsum,'file')
                     fid = fopen(fsum,'w');
-                    fprintf(fid,'conjecture,eps_up,ddJx_lower,ddJy_lower,is_verified,N_LG,N_rho,N_spectral,ord,ord_LG,INTERVAL_MODE,run_timestamp\n');
+                    fprintf(fid,'conjecture,eps_up,ddJx_lower,ddJy_lower,is_verified,N_LG,N_rho,N_spectral,ord_LG,INTERVAL_MODE,run_timestamp\n');
                     fclose(fid);
                 end
 
@@ -165,14 +161,13 @@ classdef VerificationRunner < handle
                 N_LG       = getps(diagnostics,'N_LG',obj.N_LG);
                 N_rho      = getps(diagnostics,'N_rho',obj.N_rho);
                 N_spectral = getps(diagnostics,'N_spectral',obj.N_spectral);
-                ord        = getps(diagnostics,'ord',obj.ord);
                 ord_LG     = getps(diagnostics,'ord_LG',obj.ord_LG);
                 IM         = getps(diagnostics,'INTERVAL_MODE',0);
 
                 fid = fopen(fsum,'a');
                 fprintf(fid,'%s,%.17g,%.17e,%.17e,%.0f,%d,%d,%d,%.0f,%.0f,%.0f,%s\n', ...
                     conjecture_type, obj.eps_up, I_inf(ddJx), I_inf(ddJy), isv, ...
-                    N_LG, N_rho, N_spectral, ord, ord_LG, IM,datestr(now,'yyyy-mm-dd HH:MM:SS'));
+                    N_LG, N_rho, N_spectral, ord_LG, IM,datestr(now,'yyyy-mm-dd HH:MM:SS'));
                 fclose(fid);
             end
 
