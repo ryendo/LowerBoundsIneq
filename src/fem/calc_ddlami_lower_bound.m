@@ -194,7 +194,7 @@ for k = 1:N_spectral
 end
 
 % Final rigorous lower bound
-ddlam_i_lower_bound = ddlam_i_N_h - E_approx;
+ddlam_i_lower_bound = I_intval(I_inf(ddlam_i_N_h - E_approx));
 
 
 % fprintf('    done.\n');
@@ -223,12 +223,12 @@ catch ME
 end
 
 
-fprintf('--- Calculation complete for ddot(lambda_%d) ---\n', i);
+% fprintf('--- Calculation complete for ddot(lambda_%d) ---\n', i);
 
-fprintf('  - mid( widehat(ddot(lambda_{i,N})) ): %f\n', I_mid(ddlam_i_N_h));
-fprintf('  - inf( rigorous lower bound ): %f\n\n', I_inf(ddlam_i_lower_bound));
-fprintf('  - sup( tail bound R_N )            : %e\n', I_sup(R_tail_ub));
-fprintf('  - sup( rigorous upper bound ): %f\n', I_sup(ddlam_i_upper_bound));
+% fprintf('  - mid( widehat(ddot(lambda_{i,N})) ): %f\n', I_mid(ddlam_i_N_h));
+% fprintf('  - inf( rigorous lower bound ): %f\n\n', I_inf(ddlam_i_lower_bound));
+% fprintf('  - sup( tail bound R_N )            : %e\n', I_sup(R_tail_ub));
+% fprintf('  - sup( rigorous upper bound ): %f\n', I_sup(ddlam_i_upper_bound));
 
 
 

@@ -7,7 +7,7 @@ try
     Cell_Def = readtable('cell_def.csv');
     
     % Read the conjecture results
-    J1_Data = readtable('tests/results/J1_OmegaMid.csv');
+    J1_Data = readtable('results/J2_OmegaMid.csv');
     % J2_Data = readtable('J2_OmegaMid.csv');
     
     % Rename 'i' to 'cell_id' in Cell_Def to match J tables for joining

@@ -120,7 +120,12 @@ for i_cell = cell_start:cell_end
     status = "ok";
     note   = "";
     try
-        [is_cell_verified, J_lower, ~] = verify_J_positive(conjecture_type, cell_struct);
+        if verbose && mod(local_k, 100) == 0
+            fprintf('\n[Cell index %d] Verifying J >= 0...\n', i_cell);
+            [is_cell_verified, J_lower, ~] = verify_J_positive(conjecture_type, cell_struct);
+        else
+            evalc('[is_cell_verified, J_lower, ~] = verify_J_positive(conjecture_type, cell_struct);'); %#ok<NASGU>
+        end
     catch ME
         if verbose
             fprintf('[Cell index %d] ERROR: %s\n', i_cell, ME.message);

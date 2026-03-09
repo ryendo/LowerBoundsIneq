@@ -156,7 +156,14 @@ for i = 1:Nx
         box = struct('x', [x_lo, x_hi], 'y', [y_lo, y_hi]);
 
         % Main certification for this cell
-        Lij = lower_bound_d2Jdx2_on_rectangle(conjecture_type, p_anchor, box, N_spec, mesh_params);
+        Lij = I_intval(NaN); % default: means "not computed / failed"
+
+        if box_disjoint_from_Omega(box)
+            fprintf('  -> skipped (disjoint from Omega)\n');
+            Lij = I_intval(Inf);    % safe sentinel for skipped cells (won't reduce min)
+        else
+            Lij = lower_bound_d2Jdx2_on_rectangle(conjecture_type, p_anchor, box, N_spec, mesh_params);
+        end
 
         % Store
         L(j,i)  = Lij;
@@ -248,8 +255,8 @@ yI = I_hull(box.y(1), box.y(2));
 % ------------------------------------------------------------------------
 % [Lower bound of ∂²λ1/∂x²] using calc_ddlami_lower_bound at the anchor triangle
 % ------------------------------------------------------------------------
-base_triangle = [0, 0, 1, 0, box.x(1), box.y(1)];
-triangle      = [0, 0, 1, 0, xI, yI];
+base_triangle = I_intval([0, 0, 1, 0, box.x(1), box.y(1)]);
+triangle      = I_intval([0, 0, 1, 0, xI, yI]);
 
 [N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
 
@@ -533,4 +540,28 @@ elseif isfield(mesh_params, 'fem_ord_lg')
 else
     error('mesh_params must contain fem_ord_LG (or fem_ord_lg).');
 end
+end
+
+function tf = box_disjoint_from_Omega(box)
+% Return true only if the rectangle box is PROVABLY disjoint from
+% Omega = {x^2+y^2 <= 1, x >= 1/2, y > 0}.
+
+xI = I_hull(box.x(1), box.x(2));
+yI = I_hull(box.y(1), box.y(2));
+
+
+if I_sup(xI) < 0.5
+    tf = true; return;
+end
+
+if I_sup(yI) <= 0
+    tf = true; return;
+end
+
+sI = xI.^2 + yI.^2;
+if I_inf(sI) > 1
+    tf = true; return;
+end
+
+tf = false;
 end

@@ -25,15 +25,15 @@ classdef VerificationRunner < handle
     properties
         % Parameters (paper notation)
         eps_up = 0.12;           % (fixed) epsilon_up: Omega_up region threshold
-        N_spectral = 3;          % (fixed) Number of spectral terms for ddlam computation
-        N_LG = 4;                % (fixed) Mesh resolution for Lehmann-Goerisch
+        N_spectral = 2;          % (fixed) Number of spectral terms for ddlam computation
+        N_LG = 8;                % (fixed) Mesh resolution for Lehmann-Goerisch
         N_rho = 32;              % (fixed) Mesh resolution for CR
-        ord_LG = 4;              % (fixed) Lagrange order for LG lower bound
+        ord_LG = 5;              % (fixed) Lagrange order for LG lower bound
 
         % Algorithm 2 grid parameters (Omega_up)
-        Nx = 200; % (fixed)
-        Ny = 200; % (fixed)
-        Ny_axis = 200; % (fixed)
+        Nx = 20; % (fixed)
+        Ny = 150; % (fixed)
+        Ny_axis = 1000; % (fixed)
 
         % Paths
         results_dir = 'results';

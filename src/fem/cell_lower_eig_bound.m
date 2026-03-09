@@ -1,6 +1,7 @@
 function eig_bounds = cell_lower_eig_bound(cell_data)
 
     % Extract geometry    
+    
     x1 = I_intval(cell_data.x_inf);
     x2 = I_intval(cell_data.x_sup);
     t1 = I_intval(cell_data.theta_inf);
@@ -89,8 +90,7 @@ function eig_bounds = cell_lower_eig_bound(cell_data)
         is_bnd_lg = ismember(edge_LG, bd_LG, 'rows');
         
         
-        % Lagrange_order = cell_data.fem_order_lower_LG;
-        Lagrange_order = 2;
+        Lagrange_order = cell_data.fem_order_lower_LG;
 
         % Compute High-Order Upper Bounds & Eigenfunctions (Lagrange)
         [LA_eig, LA_eigf, LA_eigf_with_bdry, LA_A, LA_M, ~, ~, ~, ~] = ...

@@ -49,16 +49,16 @@ function [ddJ_lower, components] = calc_ddJ_lower_bound(conjecture_type, triangl
     fprintf('Step 1: Computing ddlam1 lower bound...\n');
 
     % Create base triangle for calc_ddlami_lower_bound
-    base_triangle = [0, 0, 1, 0, x0, y0];  % Same as target for equilateral case
+    base_triangle = I_intval([0, 0, 1, 0, x0, y0]);  % Same as target for equilateral case
 
     % Call existing function with i=1 (lambda_1)
     [lam1, dlam1, ddlam1_lower] = calc_ddlami_lower_bound(1, base_triangle, triangle, ...
         e_direction, N_spectral, mesh_params.N_LG, mesh_params.N_rho, ...
         mesh_params.fem_ord, mesh_params.fem_ord_LG);
 
-    fprintf('  lam1 = %.10f\n', I_mid(lam1));
-    fprintf('  dlam1 = %.10f\n', I_mid(dlam1));
-    fprintf('  ddlam1_lower = %.10f\n', I_inf(ddlam1_lower));
+    fprintf('  lam1 = %.17f\n', I_mid(lam1));
+    fprintf('  dlam1 = %.17f\n', I_mid(dlam1));
+    fprintf('  ddlam1_lower = %.17f\n', I_inf(ddlam1_lower));
 
     %% Step 2: Compute geometry and its derivatives
     fprintf('Step 2: Computing geometry derivatives...\n');
@@ -72,9 +72,6 @@ function [ddJ_lower, components] = calc_ddJ_lower_bound(conjecture_type, triangl
     side2 = sqrt(x0_intval^2 + y0_intval^2);
     side3 = sqrt((I_intval('1') - x0_intval)^2 + y0_intval^2);
     Perim = side1 + side2 + side3;
-
-    fprintf('  Area = %.10f\n', I_mid(Area));
-    fprintf('  Perimeter = %.10f\n', I_mid(Perim));
 
     %% Step 2.1: First-order derivatives of geometry
     % For perturbation p -> p + t*e = (x0 + t*a, y0 + t*b):
@@ -227,7 +224,7 @@ function [ddJ_lower, components] = calc_ddJ_lower_bound(conjecture_type, triangl
         error('Unknown conjecture type: %s. Use ''J1'' or ''J2''.', conjecture_type);
     end
 
-    fprintf('  ddJ_lower = %.10f\n', ddJ_lower);
+    fprintf('  ddJ_lower = %.17f\n', ddJ_lower);
 
     %% Store all components for diagnostics
     components.triangle = triangle;
