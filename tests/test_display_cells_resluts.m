@@ -4,10 +4,10 @@ clear; clc; close all;
 % --- 1. Load Data ---
 try
     % Read the geometry definition
-    Cell_Def = readtable('cell_def.csv');
+    Cell_Def = readtable('inputs/cell_def_v1.csv');
     
     % Read the conjecture results
-    J1_Data = readtable('results/J2_OmegaMid.csv');
+    J1_Data = readtable('results/J2_OmegaMid_v2.csv');
     % J2_Data = readtable('J2_OmegaMid.csv');
     
     % Rename 'i' to 'cell_id' in Cell_Def to match J tables for joining

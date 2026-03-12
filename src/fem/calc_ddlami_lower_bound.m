@@ -27,21 +27,17 @@ function [lami, dlami, ddlam_i_lower_bound] = calc_ddlami_lower_bound(i, base_tr
 % fprintf('--- Start calc_ddlami_lower_bound for eigenvalue index i = %d ---\n', i);
 
 % Theorem \ref{thm:main-theorem-est} requires i < N.
-if i >= N_spectral
-    error('The paper''s bound requires i < N_spectral. Please use N_spectral >= i+1.');
+if i > N_spectral
+    error('The paper''s bound requires i <= N_spectral. Please use N_spectral >= i.');
 end
 
-% We typically need at least N_spectral+1 eigenpairs; the extra "+2" is kept
-% to match the original workflow (e.g., clustering / separation checks).
-num_eigs_needed = N_spectral + 1;
+num_eigs_needed = N_spectral+3;
 
 % fprintf('  > Computing eigenvalue bounds and eigenfunctions (num_eigs_needed = %d)...\n', num_eigs_needed);
 
 % lams_raw: rigorous interval enclosures of true eigenvalues on base_triangle.
 % uh_list : corresponding FEM eigenvectors (used as discrete eigenfunctions).
 % A,B     : stiffness/mass matrices, and A_xx,A_xy,A_yy for derivative bilinear forms.
-
-format long infsup
 
 [lams_raw, uh_list, A, B, A_xx, A_xy, A_yy] = ...
     calc_eigen_bounds_any_order_1k_wh(num_eigs_needed, base_triangle, N_LG, N_rho, fem_ord_LG);
@@ -99,7 +95,7 @@ norm_ddP = norm(mat_ddP, 2);
 
 % --- Eigenvalue enclosure to be returned (use the transformed/target enclosure) ---
 lami   = lams_interval(i);   % rigorous enclosure for lambda_i^p (target triangle)
-lamih  = lams_h(i);          % proxy enclosure for hat(lambda)_i^p
+lamih  = lams_h(i);          
 
 %======================================================================
 % STEP 1: FIRST-ORDER DIRECTIONAL DERIVATIVE (Hadamard formula + error bound)

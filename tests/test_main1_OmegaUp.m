@@ -2,4 +2,4 @@
 
 
 runner = VerificationRunner();  
-results = runner.verifyOmegaUp('J1');
+results = runner.verifyOmegaUp('J2');

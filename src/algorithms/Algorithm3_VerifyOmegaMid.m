@@ -20,7 +20,7 @@ global INTERVAL_MODE;
 
 % Initialize INTLAB mode if needed
 if isempty(INTERVAL_MODE)
-    INTERVAL_MODE = 0;
+    INTERVAL_MODE = 1;
 end
 
 %% ========================================================================

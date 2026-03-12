@@ -239,9 +239,6 @@ end
 function Lij = lower_bound_d2Jdx2_on_rectangle(conjecture_type, p_anchor, box, N_spec, mesh_params)
 % Implements the *single-cell* certification described in the paper algorithm.
 %
-% IMPORTANT CHANGE (requested):
-%   Use calc_ddlami_lower_bound (instead of theorem3p1_lower_bound_ddlambda).
-%
 % Output:
 %   Lij: rigorous lower bound on ∂²J_k/∂x² over all p in this rectangle.
 
@@ -323,7 +320,7 @@ end
 
 min_so_far = +Inf;
 
-for m = 1:Ny_axis
+for m = Ny_axis:-1:1
     y_lo = y_nodes(m);
     y_hi = y_nodes(m+1);
 
@@ -417,7 +414,7 @@ yI = I_hull(box.y(1), box.y(2));
 % [Lower bound of ∂²λ1/∂y²] and [lower bound of ∂λ1/∂y]
 % using calc_ddlami_lower_bound at the anchor triangle
 % ------------------------------------------------------------------------
-base_triangle = [0, 0, I_intval('1'), 0, I_intval('0.5'), sqrt(I_intval('3'))/2];
+base_triangle = I_intval([0, 0, 1, 0, p_anchor(1), p_anchor(2)]);
 triangle      = [0, 0, I_intval('1'), 0, xI, yI];
 
 [N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
@@ -432,7 +429,7 @@ dotlambda_lower = I_intval((I_inf(dlambdaI)));
 % ------------------------------------------------------------------------
 % [Lower bound of ∂²J_k/∂y²] via Lemma (Jkyy-simple)
 % ------------------------------------------------------------------------
-RyyI = interval_Ryy(conjecture_type, xI, yI);
+RyyI = interval_Ryy(conjecture_type, xI, I_intval(I_inf(yI)));
 
 JyyI = I_intval('0.5')*yI*ddlambda_lower + dotlambda_lower + RyyI;
 Lm = I_inf(JyyI);

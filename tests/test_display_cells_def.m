@@ -2,7 +2,7 @@
 clear; clc; close all;
 
 try
-    Cell_Def = readtable('cell_def.csv');
+    Cell_Def = readtable('cell_def_v1.csv');
     if ismember('i', Cell_Def.Properties.VariableNames)
         Cell_Def = renamevars(Cell_Def, 'i', 'cell_id');
     end

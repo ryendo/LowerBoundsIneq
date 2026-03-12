@@ -25,15 +25,15 @@ classdef VerificationRunner < handle
     properties
         % Parameters (paper notation)
         eps_up = 0.12;           % (fixed) epsilon_up: Omega_up region threshold
-        N_spectral = 2;          % (fixed) Number of spectral terms for ddlam computation
-        N_LG = 8;                % (fixed) Mesh resolution for Lehmann-Goerisch
-        N_rho = 32;              % (fixed) Mesh resolution for CR
-        ord_LG = 5;              % (fixed) Lagrange order for LG lower bound
+        N_spectral = 1;          % (fixed) Number of spectral terms for ddlam computation
+        N_LG = 16;                % (fixed) Mesh resolution for Lehmann-Goerisch
+        N_rho = 64;              % (fixed) Mesh resolution for CR
+        ord_LG = 2;              % (fixed) Lagrange order for LG lower bound
 
         % Algorithm 2 grid parameters (Omega_up)
-        Nx = 20; % (fixed)
-        Ny = 150; % (fixed)
-        Ny_axis = 1000; % (fixed)
+        Nx = 10; % (fixed)
+        Ny = 100; % (fixed)
+        Ny_axis = 200; %
 
         % Paths
         results_dir = 'results';
@@ -143,6 +143,7 @@ classdef VerificationRunner < handle
 
             [~, results, diagnostics] = Algorithm2_VerifyOmegaUp( ...
                 conjecture_type, obj.eps_up, obj.Nx, obj.Ny, obj.Ny_axis, obj.N_spectral, mesh_params);
+                
 
             if obj.save_intermediate
                 d = fullfile(obj.results_dir); if ~exist(d,'dir'), mkdir(d); end
