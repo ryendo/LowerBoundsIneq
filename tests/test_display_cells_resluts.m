@@ -1,19 +1,28 @@
 %% Main Script: Visualize Verification Results for J1 and J2
 clear; clc; close all;
 
+cell_def_path = 'inputs/cell_def.csv';
+results_path = 'results/J1_OmegaMid.csv';
+
 % --- 1. Load Data ---
 try
     % Read the geometry definition
-    Cell_Def = readtable('inputs/cell_def_v1.csv');
+    optsCell = detectImportOptions(cell_def_path, 'Delimiter', ',');
+    Cell_Def = readtable(cell_def_path, optsCell);
     
     % Read the conjecture results
-    J1_Data = readtable('results/J2_OmegaMid_v2.csv');
-    % J2_Data = readtable('J2_OmegaMid.csv');
+    optsJ1 = detectImportOptions(results_path, 'Delimiter', ',');
+    optsJ1 = setvartype(optsJ1, {'conjecture','status','note','run_timestamp'}, 'string');
+    J1_Data = readtable(results_path, optsJ1);
     
     % Rename 'i' to 'cell_id' in Cell_Def to match J tables for joining
     if ismember('i', Cell_Def.Properties.VariableNames)
         Cell_Def = renamevars(Cell_Def, 'i', 'cell_id');
     end
+
+    % Make sure join keys have the same type
+    J1_Data.cell_id = double(J1_Data.cell_id);
+    Cell_Def.cell_id = double(Cell_Def.cell_id);
     
 catch ME
     error('Error loading CSV files. Ensure files exist in the current folder.\n%s', ME.message);

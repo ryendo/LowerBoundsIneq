@@ -24,7 +24,7 @@ classdef VerificationRunner < handle
 
     properties
         % Parameters (paper notation)
-        eps_up = 0.12;           % (fixed) epsilon_up: Omega_up region threshold
+        eps_up = I_intval('0.122');           % (fixed) epsilon_up: Omega_up region threshold
         N_spectral = 1;          % (fixed) Number of spectral terms for ddlam computation
         N_LG = 16;                % (fixed) Mesh resolution for Lehmann-Goerisch
         N_rho = 64;              % (fixed) Mesh resolution for CR
@@ -74,7 +74,7 @@ classdef VerificationRunner < handle
                 fprintf('VERIFICATION RUNNER INITIALIZED\n');
                 fprintf('================================================================\n');
                 fprintf('Parameters:\n');
-                fprintf('  eps_up: %.17f\n', obj.eps_up);
+                fprintf('  eps_up: %.17f\n', I_mid(obj.eps_up));
                 fprintf('  N_spectral: %d\n', obj.N_spectral);                
                 fprintf('  ord_LG: %d, N_LG: %d, N_rho: %d\n',obj.ord_LG, obj.N_LG, obj.N_rho);
                 fprintf('  Algorithm2 grid: Nx=%d, Ny=%d, Ny_axis=%d\n', obj.Nx, obj.Ny, obj.Ny_axis);
@@ -167,7 +167,7 @@ classdef VerificationRunner < handle
 
                 fid = fopen(fsum,'a');
                 fprintf(fid,'%s,%.17g,%.17e,%.17e,%.0f,%d,%d,%d,%.0f,%.0f,%.0f,%s\n', ...
-                    conjecture_type, obj.eps_up, I_inf(ddJx), I_inf(ddJy), isv, ...
+                    conjecture_type, I_mid(obj.eps_up), I_inf(ddJx), I_inf(ddJy), isv, ...
                     N_LG, N_rho, N_spectral, ord_LG, IM,datestr(now,'yyyy-mm-dd HH:MM:SS'));
                 fclose(fid);
             end
@@ -208,6 +208,14 @@ classdef VerificationRunner < handle
             ids = expectedIds(cell_def_file, cell_range);
             nCells = numel(ids);
 
+            % Read cell definition CSV once for verbose display
+            Tdef = table();
+            try
+                Tdef = readtable(cell_def_file, 'TextType','string');
+            catch
+                Tdef = table();
+            end
+
             % CSV output for per-cell append
             d = fullfile(obj.results_dir);
             if ~exist(d,'dir'), mkdir(d); end
@@ -238,33 +246,33 @@ classdef VerificationRunner < handle
                 fclose(fid);
             end
 
-            % CSV-based resume: read already-recorded cells
-            done = containers.Map('KeyType','double','ValueType','any'); % cell_id -> struct row
-            if obj.resume_enabled && exist(f,'file')
+            % Existing CSV state: keep the latest row index for each cell_id
+            Tcsv = table();
+            rowOfCid = containers.Map('KeyType','double','ValueType','double'); % cell_id -> row index
+
+            if exist(f,'file')
                 try
-                    Tprev = readtable(f, 'TextType','string');
-                    if any(strcmpi(Tprev.Properties.VariableNames, 'cell_id'))
-                        if any(strcmpi(Tprev.Properties.VariableNames, 'conjecture'))
-                            Tprev = Tprev(strcmpi(string(Tprev.conjecture), conjecture_type), :);
+                    Tcsv = readtable(f, 'TextType','string');
+
+                    if any(strcmpi(Tcsv.Properties.VariableNames, 'cell_id'))
+                        rowsThis = true(height(Tcsv),1);
+                        if any(strcmpi(Tcsv.Properties.VariableNames, 'conjecture'))
+                            rowsThis = strcmpi(string(Tcsv.conjecture), conjecture_type);
                         end
 
-                        cidv = double(Tprev.cell_id);
-                        for r = 1:height(Tprev)
+                        cidv = double(Tcsv.cell_id);
+                        for r = 1:height(Tcsv)
+                            if ~rowsThis(r), continue; end
                             cid = cidv(r);
                             if ~isnan(cid)
-                                row = struct();
-                                row.cell_id  = cid;
-                                row.verified = getNumRow(Tprev, r, "verified", NaN);
-                                row.J_lower  = getNumRow(Tprev, r, "J_lower", NaN);
-                                row.status   = getStrRow(Tprev, r, "status", "");
-                                row.note     = getStrRow(Tprev, r, "note", "");
-                                done(cid) = row; % keep the latest occurrence
+                                rowOfCid(cid) = r; % keep the latest occurrence
                             end
                         end
                     end
                 catch ME
+                    Tcsv = table();
                     if obj.verbose
-                        fprintf('[OmegaMid] Resume: failed to read existing CSV (%s). Recomputing.\n', ME.message);
+                        fprintf('[OmegaMid] Existing CSV read failed (%s). Starting from scratch.\n', ME.message);
                     end
                 end
             end
@@ -277,75 +285,154 @@ classdef VerificationRunner < handle
             n_verified = 0;
             all_ok = true;
 
+            % Split target cells into:
+            %   (1) existing rows that must be rechecked/overwritten
+            %   (2) new unknown rows
+            idx_recheck = [];
+            idx_unknown = [];
 
             for i = 1:nCells
                 cid = ids(i);
 
-                % If already present in CSV and resume is enabled, skip computation
-                if obj.resume_enabled && isKey(done, cid)
-                    row = done(cid);
+                if obj.resume_enabled && isKey(rowOfCid, cid)
+                    r = rowOfCid(cid);
+
+                    row = struct();
+                    row.cell_id  = cid;
+                    row.verified = getNumRow(Tcsv, r, "verified", NaN);
+                    row.J_lower  = getNumRow(Tcsv, r, "J_lower", NaN);
+                    row.status   = getStrRow(Tcsv, r, "status", "");
+                    row.note     = getStrRow(Tcsv, r, "note", "");
                     per_cell(i) = row;
 
                     if isfinite(row.verified) && row.verified == 1
+                        n_verified = n_verified + 1;
+                        if obj.verbose
+                            fprintf('[OmegaMid] Skip verified cell %d/%d (id=%d)\n', i, nCells, cid);
+                        end
+                    else
+                        idx_recheck(end+1) = i; %#ok<AGROW>
+                    end
+                else
+                    idx_unknown(end+1) = i; %#ok<AGROW>
+                end
+            end
+
+            n_recheck_left = numel(idx_recheck);
+            n_unknown_left = numel(idx_unknown);
+
+            if obj.verbose
+                fprintf('[OmegaMid] Existing rows to recheck: %d\n', n_recheck_left);
+                fprintf('[OmegaMid] Unknown rows to compute: %d\n', n_unknown_left);
+            end
+
+            proc_groups = {idx_recheck, idx_unknown};
+            proc_labels = {'Recheck', 'Run new'};
+
+            for g = 1:2
+                idx_list = proc_groups{g};
+
+                for kk = 1:numel(idx_list)
+                    i = idx_list(kk);
+                    cid = ids(i);
+
+                    remRecheck = n_recheck_left - (g == 1);
+                    remUnknown = n_unknown_left - (g == 2);
+
+                    if obj.verbose
+                        fprintf('[OmegaMid] %s cell %d/%d (id=%d) | remaining recheck=%d, unknown=%d\n', ...
+                            proc_labels{g}, i, nCells, cid, remRecheck, remUnknown);
+
+                        defLine = cellDefRowString(Tdef, cid, i, cell_range);
+                        if ~isempty(defLine)
+                            fprintf('[OmegaMid] cell_def row: %s\n', defLine);
+                        end
+                    end
+
+                    try
+                        [is_verified_cell, algo_results, ~] = Algorithm3_VerifyOmegaMid( ...
+                            conjecture_type, ...
+                            cell_def_file, ...
+                            obj.verbose, ...
+                            [i i]);
+
+                        cr = pickSingleCell(algo_results);
+
+                        verified = double(is_verified_cell);
+                        Jlb      = getNum(cr, {'J_lower','J_lb','J_min','lower_bound','lb','JLower'}, NaN);
+                        status   = getStr(cr, {'status','state','message','msg'}, 'ok');
+                        note     = "";
+                    catch ME
+                        verified = NaN;
+                        Jlb      = NaN;
+                        status   = 'error';
+                        note     = ME.message;
+                    end
+
+                    per_cell(i).cell_id  = cid;
+                    per_cell(i).verified = verified;
+                    per_cell(i).J_lower  = Jlb;
+                    per_cell(i).status   = status;
+                    per_cell(i).note     = note;
+
+                    if isfinite(verified) && verified == 1
                         n_verified = n_verified + 1;
                     else
                         all_ok = false;
                     end
 
-                    if obj.verbose
-                        fprintf('[OmegaMid] Skip (CSV-resume) cell %d/%d (id=%d)\n', i, nCells, cid);
+                    % Recheck: keep old behavior (rewrite whole CSV)
+                    % Unknown: append one line only
+                    if obj.save_intermediate
+                        ts = string(datestr(now,'yyyy-mm-dd HH:MM:SS'));
+
+                        if isKey(rowOfCid, cid)
+                            % -----------------------------
+                            % existing row -> recheck mode
+                            % -----------------------------
+                            r = rowOfCid(cid);
+                            Tcsv.conjecture(r)    = string(conjecture_type);
+                            Tcsv.cell_id(r)       = double(cid);
+                            Tcsv.verified(r)      = double(verified);
+                            Tcsv.J_lower(r)       = Jlb;
+                            Tcsv.status(r)        = string(status);
+                            Tcsv.note(r)          = string(note);
+                            Tcsv.run_timestamp(r) = ts;
+
+                            % keep current behavior for recheck
+                            writeOmegaMidCSV(f, Tcsv);
+
+                        else
+                            % -----------------------------
+                            % truly new row -> unknown mode
+                            % -----------------------------
+                            newRow = table( ...
+                                string(conjecture_type), ...
+                                double(cid), ...
+                                double(verified), ...
+                                Jlb, ...
+                                string(status), ...
+                                string(note), ...
+                                ts, ...
+                                'VariableNames', {'conjecture','cell_id','verified','J_lower','status','note','run_timestamp'});
+
+                            % update in-memory state as well
+                            if isempty(Tcsv) || width(Tcsv) == 0
+                                Tcsv = newRow;
+                            else
+                                Tcsv = [Tcsv; newRow];
+                            end
+                            rowOfCid(cid) = height(Tcsv);
+
+                            % append only one line to file
+                            appendOmegaMidCSVRow(f, newRow);
+                        end
                     end
-                    continue;
-                end
 
-                if obj.verbose
-                    fprintf('[OmegaMid] Run cell %d/%d (id=%d)\n', i, nCells, cid);
-                end
-
-                try
-                    [is_verified_cell, algo_results, ~] = Algorithm3_VerifyOmegaMid( ...
-                        conjecture_type, ...
-                        cell_def_file, ...
-                        obj.verbose, ...
-                        [i i]);
-
-                    cr = pickSingleCell(algo_results);
-
-                    verified = double(is_verified_cell);
-                    Jlb     = getNum(cr, {'J_lower','J_lb','J_min','lower_bound','lb','JLower'}, NaN);
-                    status  = getStr(cr, {'status','state','message','msg'}, 'ok');
-                    note    = '';
-
-                catch ME
-                    verified = NaN; Jlb = NaN; Jub = NaN;
-                    status = 'error';
-                    note = ME.message;
-                end
-
-                per_cell(i).cell_id  = cid;
-                per_cell(i).verified = verified;
-                per_cell(i).J_lower  = Jlb;
-                per_cell(i).status   = status;
-                per_cell(i).note     = note;
-
-                if isfinite(verified) && verified == 1
-                    n_verified = n_verified + 1;
-                else
-                    all_ok = false;
-                end
-
-                % Append immediately (default behavior)
-                if obj.save_intermediate
-                    fid = fopen(f,'a');
-                    if fid < 0
-                        warning('Cannot open: %s', f);
+                    if g == 1
+                        n_recheck_left = n_recheck_left - 1;
                     else
-                        c = onCleanup(@() fclose(fid));
-                        ts = datestr(now,'yyyy-mm-dd HH:MM:SS');
-
-                        fprintf(fid,'%s,%d,%d,%.17e,"%s","%s",%s\n', ...
-                            conjecture_type, double(cid), double(verified), double(Jlb), ...
-                            csvEsc(status), csvEsc(note), ts);
+                        n_unknown_left = n_unknown_left - 1;
                     end
                 end
             end
@@ -366,6 +453,234 @@ classdef VerificationRunner < handle
             % ===========================
             % local helper functions
             % ===========================
+            function appendOmegaMidCSVRow(fname, rowT)
+                fid = fopen(fname, 'a');
+                if fid < 0
+                    warning('Cannot open for append: %s', fname);
+                    return;
+                end
+                c = onCleanup(@() fclose(fid));
+
+                writeOmegaMidCSVRow(fid, ...
+                    rowT.conjecture(1), ...
+                    rowT.cell_id(1), ...
+                    rowT.verified(1), ...
+                    rowT.J_lower(1), ...
+                    rowT.status(1), ...
+                    rowT.note(1), ...
+                    rowT.run_timestamp(1));
+            end
+
+            function writeOmegaMidCSVRow(fid, conjecture, cell_id, verified, J_lower, status, note, ts)
+                conjecture = csvText(conjecture);
+                status     = csvText(status);
+                note       = csvText(note);
+                ts         = csvText(ts);
+
+                cell_id  = numOrNaN(cell_id);
+                verified = numOrNaN(verified);
+                J_lower  = numOrNaN(J_lower);
+
+                fprintf(fid, '%s,%d,%d,%.17e,"%s","%s",%s\n', ...
+                    csvEsc(conjecture), ...
+                    cell_id, ...
+                    verified, ...
+                    J_lower, ...
+                    csvEsc(status), ...
+                    csvEsc(note), ...
+                    csvEsc(ts));
+            end
+
+
+            function s = numText(in)
+                v = numOrNaN(in);
+                if isnan(v)
+                    s = 'NaN';
+                else
+                    s = sprintf('%.17g', v);
+                end
+            end
+
+            function s = csvText(in)
+                % Convert table entry / string / missing / cell safely to char row vector.
+                if iscell(in)
+                    if isempty(in)
+                        s = '';
+                        return;
+                    end
+                    in = in{1};
+                end
+
+                if isempty(in)
+                    s = '';
+                    return;
+                end
+
+                if ismissing(in)
+                    s = '';
+                    return;
+                end
+
+                if isstring(in)
+                    if isscalar(in)
+                        s = char(in);
+                    else
+                        s = char(join(in, "; "));
+                    end
+                    return;
+                end
+
+                if ischar(in)
+                    s = in;
+                    return;
+                end
+
+                if isnumeric(in) || islogical(in)
+                    if isscalar(in)
+                        if isnan(in)
+                            s = '';
+                        else
+                            s = char(string(in));
+                        end
+                    else
+                        s = mat2str(in);
+                    end
+                    return;
+                end
+
+                try
+                    s = char(string(in));
+                catch
+                    s = '';
+                end
+            end
+
+            function v = numOrNaN(in)
+                if iscell(in)
+                    if isempty(in)
+                        v = NaN;
+                        return;
+                    end
+                    in = in{1};
+                end
+
+                if isempty(in) || ismissing(in)
+                    v = NaN;
+                    return;
+                end
+
+                if isnumeric(in) || islogical(in)
+                    v = double(in);
+                    return;
+                end
+
+                if isstring(in) || ischar(in)
+                    v = str2double(string(in));
+                    if isnan(v)
+                        v = NaN;
+                    end
+                    return;
+                end
+
+                v = NaN;
+            end
+            function writeOmegaMidCSV(fname, T)
+                fid = fopen(fname, 'w');
+                if fid < 0
+                    warning('Cannot open: %s', fname);
+                    return;
+                end
+                c = onCleanup(@() fclose(fid));
+
+                fprintf(fid, 'conjecture,cell_id,verified,J_lower,status,note,run_timestamp\n');
+
+                for rr = 1:height(T)
+                    writeOmegaMidCSVRow(fid, ...
+                        T.conjecture(rr), ...
+                        T.cell_id(rr), ...
+                        T.verified(rr), ...
+                        T.J_lower(rr), ...
+                        T.status(rr), ...
+                        T.note(rr), ...
+                        T.run_timestamp(rr));
+                end
+            end
+            function s = cellDefRowString(T, cid, local_i, range_)
+                % Return one printable line for the corresponding row in cell_def_file.
+                % Preference:
+                %   1) match by cell_id-like column
+                %   2) fallback to row position implied by cell_range/local_i
+
+                s = '';
+                if isempty(T) || height(T) == 0
+                    return;
+                end
+
+                r = NaN;
+
+                % Try to match by ID column first
+                vars = lower(string(T.Properties.VariableNames));
+                cand = find(ismember(vars, ["cell_id","cellid","id","index","cell_idx","cellindex","cell_index"]), 1);
+
+                if ~isempty(cand)
+                    raw = T{:,cand};
+                    if iscell(raw)
+                        raw = cellfun(@(x) str2double(string(x)), raw);
+                    else
+                        raw = double(raw);
+                    end
+                    k = find(raw == cid, 1, 'first');
+                    if ~isempty(k)
+                        r = k;
+                    end
+                end
+
+                % Fallback: use row index implied by cell_range
+                if isnan(r)
+                    if ~isempty(range_) && numel(range_) == 2
+                        r = floor(range_(1)) + local_i - 1;
+                    else
+                        r = local_i;
+                    end
+                end
+
+                if r < 1 || r > height(T)
+                    return;
+                end
+
+                s = tableRowToString(T, r);
+            end
+
+            function s = tableRowToString(T, r)
+                names = string(T.Properties.VariableNames);
+                parts = strings(1, numel(names));
+
+                for jj = 1:numel(names)
+                    x = T{r, jj};
+                    if iscell(x), x = x{1}; end
+                    if ismissing(x)
+                        val = "";
+                    elseif isstring(x) || ischar(x)
+                        val = string(x);
+                    elseif isnumeric(x) || islogical(x)
+                        if isscalar(x)
+                            val = string(x);
+                        else
+                            val = string(mat2str(x));
+                        end
+                    else
+                        try
+                            val = string(jsonencode(x));
+                        catch
+                            val = "<unprintable>";
+                        end
+                    end
+                    parts(jj) = names(jj) + "=" + val;
+                end
+
+                s = char(strjoin(parts, ', '));
+            end
+
             function ids = expectedIds(def_file, range_)
                 % Prefer IDs in def_file; fallback to 1..N; then apply range_ on ORDER.
                 ids = [];
@@ -446,8 +761,7 @@ classdef VerificationRunner < handle
             end
 
             function out = csvEsc(in)
-                if isstring(in), in = char(in); end
-                if ~ischar(in), in = ''; end
+                in = csvText(in);
                 out = strrep(in, '"', '""');
             end
 

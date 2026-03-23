@@ -49,6 +49,7 @@ function my_intlab_config()
     addpath(fullfile(project_root, 'inputs'));
     addpath(fullfile(project_root, 'results'));
     addpath(fullfile(project_root, 'tests'));
+    addpath(fullfile(project_root, 'tools'));
     addpath(project_root);
 
     % INTLAB toolbox    

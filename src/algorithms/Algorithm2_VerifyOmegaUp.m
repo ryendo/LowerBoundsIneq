@@ -50,7 +50,7 @@ fprintf('================================================================\n');
 fprintf('ALGORITHM 2 (Step 1): Ω_up verification (paper-matched algorithms)\n');
 fprintf('================================================================\n');
 fprintf('Conjecture: %s\n', conjecture_type);
-fprintf('eps_up = %.17g\n', eps_up);
+fprintf('eps_up = %.17g\n', I_mid(eps_up));
 fprintf('Nx=%d, Ny=%d (rect grid), Ny_axis=%d (axis intervals), N_spec=%d\n', Nx, Ny, Ny_axis, N_spec);
 fprintf('Interval mode: %d\n\n', INTERVAL_MODE);
 
