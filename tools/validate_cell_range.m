@@ -96,7 +96,7 @@ for k = 1:numel(bp) - 1
 end
 
 if isCovered
-    fprintf('OK: ../inputs/cell_def_v4.csv completely covers Omega_mid.\n');
+    fprintf('OK: ../inputs/cell_def.csv completely covers Omega_mid.\n');
 else
     fprintf('NG: coverage fails on x in [%.16f, %.16f].\n', witness(1), witness(2));
     fprintf('Required theta interval on this slab is [%.16f, %.16f].\n', witness(3), witness(4));
