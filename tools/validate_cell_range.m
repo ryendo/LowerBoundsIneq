@@ -9,7 +9,7 @@ xMax    = I_intval('1.0');
 tol     = I_intval('1.0e-12');
 
 % Read cells defined in (x, theta)
-T  = readtable('inputs/cell_def_v5_confirm_.csv');
+T  = readtable('inputs/cell_def_v6.csv');
 xL = T.x_inf;
 xR = T.x_sup;
 tL = T.theta_inf;

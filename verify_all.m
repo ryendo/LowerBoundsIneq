@@ -1,6 +1,6 @@
 
 runner = VerificationRunner();  
-% results = runner.verifyOmegaUp('J1');
-% results = runner.verifyOmegaUp('J2');
-results = runner.verifyOmegaMid('J1', [], 'inputs/cell_def_failed_J1.csv');
-% results = runner.verifyOmegaMid('J2', [], 'inputs/cell_def.csv');
+results_J1Up = runner.verifyOmegaUp('J1');
+results_J2Up = runner.verifyOmegaUp('J2');
+results_J1Mid = runner.verifyOmegaMid('J1', [], 'inputs/cell_def.csv');
+results_J2Mid = runner.verifyOmegaMid('J2', [], 'inputs/cell_def.csv');
