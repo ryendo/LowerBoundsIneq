@@ -12,10 +12,10 @@ The project rigorously verifies sharp lower bounds for the first Dirichlet Lapla
 
 The code implements the computer-assisted parts of Section 4 of the paper:
 
-- **Step 1: `\Omega_{\mathrm{up}}`** — near the equilateral triangle, using certified lower bounds for second directional derivatives and convexity checks;
-- **Step 2: `\Omega_{\mathrm{mid}}`** — the intermediate region, using per-cell certified lower bounds for the functionals.
+- **Step 1: $\Omega_{\mathrm{up}}$** — near the equilateral triangle, using certified lower bounds for second directional derivatives and convexity checks;
+- **Step 2: $\Omega_{\mathrm{mid}}$** — the intermediate region, using per-cell certified lower bounds for the functionals.
 
-The paper also treats the degenerate region **`\Omega_{\mathrm{down}}`** analytically. That part is **not** implemented here as a separate MATLAB verification routine.
+The paper also treats the degenerate region **$\Omega_{\mathrm{down}}$** analytically. That part is **not** implemented here as a separate MATLAB verification routine.
 
 ---
 
@@ -39,9 +39,9 @@ J_2(\triangle)=\lambda_1(\triangle)|\triangle|-\frac{4\pi^2}{\left(3+\sqrt{\pi\s
 
 The computational strategy follows the decomposition of the triangle moduli space into three regions:
 
-- **`\Omega_{\mathrm{up}}`**: a neighborhood of the equilateral triangle;
-- **`\Omega_{\mathrm{mid}}`**: an intermediate region covered by finitely many cells in `(x,\theta)` coordinates;
-- **`\Omega_{\mathrm{down}}`**: a nearly degenerate region handled analytically in the paper.
+- **$\Omega_{\mathrm{up}}$**: a neighborhood of the equilateral triangle;
+- **$\Omega_{\mathrm{mid}}$**: an intermediate region covered by finitely many cells in $(x,\theta)$ coordinates;
+- **$\Omega_{\mathrm{down}}$**: a nearly degenerate region handled analytically in the paper.
 
 Triangles are normalized as
 
@@ -135,18 +135,18 @@ Before running the code, make sure these dependencies are installed locally and 
   Main orchestrator for the verified computations.
 
 - **`src/algorithms/Algorithm2_VerifyOmegaUp.m`**  
-  Implements the `\Omega_{\mathrm{up}}` verification:
-  - certification of positivity of `\partial_x^2 J_k`,
-  - certification of positivity of `\partial_y^2 J_k` on the symmetry axis.
+  Implements the $\Omega_{\mathrm{up}}$ verification:
+  - certification of positivity of $\partial_x^2 J_k$,
+  - certification of positivity of $\partial_y^2 J_k$ on the symmetry axis.
 
 - **`src/algorithms/Algorithm3_VerifyOmegaMid.m`**  
-  Implements the `\Omega_{\mathrm{mid}}` batch verification over the cells listed in `inputs/cell_def.csv`.
+  Implements the $\Omega_{\mathrm{mid}}$ batch verification over the cells listed in $inputs/cell_def.csv$.
 
-- **`src/algorithms/verify_J_positive.m`**  
+- **$src/algorithms/verify_J_positive.m$**  
   Single-cell verification routine used in Step 2.
 
-- **`src/fem/calc_ddlami_lower_bound.m`**  
-  Core certified routine for lower bounds of second directional shape derivatives of `\lambda_1`.
+- **$src/fem/calc_ddlami_lower_bound.m$**  
+  Core certified routine for lower bounds of second directional shape derivatives of $\lambda_1$.
 
 ---
 
@@ -237,8 +237,8 @@ results_up_J2 = runner.verifyOmegaUp('J2');
 
 This routine checks:
 
-- positivity of `\partial_x^2 J_k` on a rectangular cover of `\Omega_{\mathrm{up}}`,
-- positivity of `\partial_y^2 J_k` on the symmetry axis `x=1/2`.
+- positivity of $\partial_x^2 J_k$ on a rectangular cover of $\Omega_{\mathrm{up}}$,
+- positivity of $\partial_y^2 J_k$ on the symmetry axis $x=1/2$.
 
 Intermediate CSV files are written to `results/`:
 
@@ -264,7 +264,7 @@ results_mid_subset = runner.verifyOmegaMid('J1', [1 200], 'inputs/cell_def.csv')
 Notes:
 
 - `cell_range = [a b]` refers to **row indices** in `cell_def.csv`;
-- `VerificationRunner` supports CSV-based resume behavior for `\Omega_{\mathrm{mid}}`;
+- `VerificationRunner` supports CSV-based resume behavior for $\Omega_{\mathrm{mid}}$;
 - results are appended to `results/J1_OmegaMid.csv` or `results/J2_OmegaMid.csv`.
 
 ### 4. Run the complete implemented workflow
@@ -277,8 +277,8 @@ results = runner.runCompleteVerification('J1', ...
 
 This runs:
 
-1. `\Omega_{\mathrm{up}}`,
-2. `\Omega_{\mathrm{mid}}`.
+1. $\Omega_{\mathrm{up}}$,
+2. $\Omega_{\mathrm{mid}}$.
 
 The current implementation does **not** include a separate `verifyOmegaDown(...)` method.
 
@@ -302,7 +302,7 @@ cell_data.fem_order_lower_LG = 2;
 [verified, J_lower, diagnostics] = verify_J_positive('J1', cell_data);
 ```
 
-### 6. Certified second derivative of `\lambda_1`
+### 6. Certified second derivative of $\lambda_1$
 
 For lower bounds of second directional derivatives of the first eigenvalue:
 
@@ -315,13 +315,13 @@ e_direction   = [1, 0];
     1, base_triangle, triangle, e_direction, 1, 16, 64, 2);
 ```
 
-This is the core routine used by the `\Omega_{\mathrm{up}}` verification.
+This is the core routine used by the $\Omega_{\mathrm{up}}$ verification.
 
 ---
 
 ## Input Data: `inputs/cell_def.csv`
 
-The file `inputs/cell_def.csv` defines the covering of `\Omega_{\mathrm{mid}}` and the FEM parameters used per cell.
+The file `inputs/cell_def.csv` defines the covering of $\Omega_{\mathrm{mid}}$ and the FEM parameters used per cell.
 Its columns are:
 
 - `i`
@@ -332,7 +332,7 @@ Its columns are:
 - `isLG`
 - `mesh_size_lower_LG`, `fem_order_lower_LG`
 
-Geometrically, a cell is given in `(x,\theta)` coordinates, with
+Geometrically, a cell is given in $(x,\theta)$ coordinates, with
 
 ```math
 y = x\tan(\theta).
@@ -340,7 +340,7 @@ y = x\tan(\theta).
 
 The Step 2 proof uses domain monotonicity on each cell to combine:
 
-- lower bounds for `\lambda_1`,
+- lower bounds for $\lambda_1$,
 - lower / upper geometric evaluations of area and perimeter,
 - a certified lower evaluation of `J_1` or `J_2`.
 
@@ -351,16 +351,16 @@ The Step 2 proof uses domain monotonicity on each cell to combine:
 The main output files are:
 
 - `results/J1_OmegaUp.csv`, `results/J2_OmegaUp.csv`  
-  summary of the `\Omega_{\mathrm{up}}` verification;
+  summary of the $\Omega_{\mathrm{up}}$ verification;
 
 - `results/J1_OmegaMid.csv`, `results/J2_OmegaMid.csv`  
-  per-cell verification logs for `\Omega_{\mathrm{mid}}`;
+  per-cell verification logs for $\Omega_{\mathrm{mid}}$;
 
 - `results/J1_OmegaUp_step1_2_cells.csv`, `results/J2_OmegaUp_step1_2_cells.csv`  
-  detailed rectangle-wise lower bounds for `\partial_x^2 J_k`;
+  detailed rectangle-wise lower bounds for $\partial_x^2 J_k$;
 
 - `results/J1_OmegaUp_step1_3_axis.csv`, `results/J2_OmegaUp_step1_3_axis.csv`  
-  detailed interval-wise lower bounds for `\partial_y^2 J_k` on the axis.
+  detailed interval-wise lower bounds for $\partial_y^2 J_k$ on the axis.
 
 The complete workflow also writes a flattened CSV summary under:
 
