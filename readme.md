@@ -21,7 +21,7 @@ The paper also treats the degenerate region **`\Omega_{\mathrm{down}}`** analyti
 
 ## Background
 
-Let $\triangle$ be a planar triangle, $\lambda_1(\triangle)$ its first Dirichlet eigenvalue, `|\triangle|` its area, and `|\partial \triangle|` its perimeter.
+Let $\triangle$ be a planar triangle, $\lambda_1(\triangle)$ its first Dirichlet eigenvalue, $|\triangle|$ its area, and $|\partial \triangle|$ its perimeter.
 The paper proves that the equilateral triangle uniquely minimizes the following functionals:
 
 ### J1 (Laugesen–Siudeja type)
