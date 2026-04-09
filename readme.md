@@ -246,7 +246,7 @@ Intermediate CSV files are written to `results/`:
 - `J*_OmegaUp_step1_3_axis.csv`
 - `J*_OmegaUp.csv`
 
-### 3. Step 2: Verify `\Omega_{\mathrm{mid}}`
+### 3. Step 2: Verify $\Omega_{\mathrm{mid}}$
 
 Run the batch verification over the cells in `inputs/cell_def.csv`:
 
