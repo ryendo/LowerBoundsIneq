@@ -46,7 +46,7 @@ The computational strategy follows the decomposition of the triangle moduli spac
 Triangles are normalized as
 
 ```math
-\triangle^{(x,y)} = \operatorname{conv}\{(0,0),(1,0),(x,y)\},
+\triangle^{(x,y)} = \mbox{conv}\{(0,0),(1,0),(x,y)\},
 ```
 
 with
