@@ -21,20 +21,20 @@ The paper also treats the degenerate region **`\Omega_{\mathrm{down}}`** analyti
 
 ## Background
 
-Let `T` be a planar triangle, `\lambda_1(T)` its first Dirichlet eigenvalue, `|T|` its area, and `|\partial T|` its perimeter.
+Let $\triangle$ be a planar triangle, $\lambda_1(\triangle)$ its first Dirichlet eigenvalue, `|\triangle|` its area, and `|\partial \triangle|` its perimeter.
 The paper proves that the equilateral triangle uniquely minimizes the following functionals:
 
 ### J1 (Laugesen–Siudeja type)
 
 ```math
-J_1(T)=\lambda_1(T)|T|-\frac{\pi^2}{16}\frac{|\partial T|^2}{|T|}-\frac{7\sqrt{3}\pi^2}{12}.
+J_1(\triangle)=\lambda_1(\triangle)|\triangle|-\frac{\pi^2}{16}\frac{|\partial \triangle|^2}{|\triangle|}-\frac{7\sqrt{3}\pi^2}{12}.
 ```
 
 ### J2 (Cheeger type)
 
 ```math
-J_2(T)=\lambda_1(T)|T|-\frac{4\pi^2}{\left(3+\sqrt{\pi\sqrt{3}}\right)^2}
-\frac{\left(|\partial T|+\sqrt{4\pi|T|}\right)^2}{4|T|}.
+J_2(\triangle)=\lambda_1(\triangle)|\triangle|-\frac{4\pi^2}{\left(3+\sqrt{\pi\sqrt{3}}\right)^2}
+\frac{\left(|\partial \triangle|+\sqrt{4\pi|\triangle|}\right)^2}{4|\triangle|}.
 ```
 
 The computational strategy follows the decomposition of the triangle moduli space into three regions:
@@ -46,7 +46,7 @@ The computational strategy follows the decomposition of the triangle moduli spac
 Triangles are normalized as
 
 ```math
-T_{(x,y)} = \operatorname{conv}\{(0,0),(1,0),(x,y)\},
+\triangle^{(x,y)} = \operatorname{conv}\{(0,0),(1,0),(x,y)\},
 ```
 
 with
