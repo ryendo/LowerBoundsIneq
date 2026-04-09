@@ -77,8 +77,6 @@ In addition, the mesh-generation routines require:
 
 - **gmsh** (tested with **gmsh 4.8.4**).
 
-### Important dependency note
-
 This archive contains the project-specific routines under `src/lib/VFEM2D_revised/`, but the current MATLAB path configuration in `my_intlab_config.m` also expects external installations of **INTLAB**, **VFEM2D**, and **veigs**.
 Before running the code, make sure these dependencies are installed locally and that `my_intlab_config.m` points to the correct locations.
 
