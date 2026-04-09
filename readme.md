@@ -140,12 +140,12 @@ Before running the code, make sure these dependencies are installed locally and 
   - certification of positivity of $\partial_y^2 J_k$ on the symmetry axis.
 
 - **`src/algorithms/Algorithm3_VerifyOmegaMid.m`**  
-  Implements the $\Omega_{\mathrm{mid}}$ batch verification over the cells listed in $inputs/cell_def.csv$.
+  Implements the $\Omega_{\mathrm{mid}}$ batch verification over the cells listed in `inputs/cell_def.csv`.
 
-- **$src/algorithms/verify_J_positive.m$**  
+- **`src/algorithms/verify_J_positive.m`**  
   Single-cell verification routine used in Step 2.
 
-- **$src/fem/calc_ddlami_lower_bound.m$**  
+- **`src/fem/calc_ddlami_lower_bound.m`**  
   Core certified routine for lower bounds of second directional shape derivatives of $\lambda_1$.
 
 ---
