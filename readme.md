@@ -65,15 +65,6 @@ LowerBoundsIneq/
 
 ---
 
-## Requirements
-
-- **MATLAB** (tested on R2023b).
-- **Parallel Computing Toolbox** (for the parallel reproduction path).
-- **INTLAB 12** (bundled in `Intlab_V12/`; first startup regenerates its version-tagged `.mat`).
-- **gmsh 4.x** (tested with 4.8.4) on your `$PATH` or explicit path.
-
----
-
 ## Core Libraries & Dependencies
 
 This project relies on specialized libraries for verified numerical computation:
