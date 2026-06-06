@@ -23,10 +23,21 @@ CSTAR=4.0*PI**2/(3.0+math.sqrt(PI*math.sqrt(3.0)))**2
 EPS_UP=0.122; EPS_DOWN=0.04; P0=(0.5,math.sqrt(3.0)/2.0)
 THETA_MAX=PI/3.0
 HAIRCUT=0.0            # accurate where it matters (see lam1_float); DB lb used as-is
-MAX_DEPTH=18
+MAX_DEPTH=20
 Y_FLOOR=EPS_DOWN                       # degenerate-side floor = paper's eps_down
-Y_TOP=math.sqrt(3.0)/2.0 - EPS_UP      # equilateral-side ceiling = Omega_up strip floor
-STRADDLE_MAXLEN=13                     # cap boundary (straddle) refinement at this address length
+
+# ---- realistic-cell-size cap + CR/LG method assignment ----
+# The float lambda_1 estimate is too coarse near the equilateral (J ~ 1e-3), so cells
+# there would refine to absurd sizes. Instead we CAP the address length at MAXLEN_ADDR
+# (realistic minimum cell), and assign the rigorous method by distance to p0:
+#   * dist(.,p0) <  DIST_LG  -> LG (the equilateral neighborhood, precision required);
+#   * dist(.,p0) >= DIST_LG  -> CR only (large J, CR with MESH_CR suffices).
+# Cells that float-fail at the cap are kept as LG leaves (the rigorous LG verifies them).
+MAXLEN_ADDR=14        # max address length (min (x,theta) cell ~ 0.5/2^13 ~ 6e-5)
+DIST_LG=0.26          # equilateral-neighbourhood radius for LG (else CR only)
+MESH_CR=0.02          # CR mesh away from p0
+MESH_CR_FINE=0.01     # CR mesh just outside the LG neighbourhood
+MESH_LG=0.10; ORDER_LG=2
 DB_CSV='/tmp/DatabaseTriangle/results/database_best_cover.csv'
 
 # ---- aspect-aware float lambda1 for iteration>=2 refined cells ----
@@ -61,10 +72,17 @@ def classify(c):
     # must be VERIFIED (eval_cell evaluates B over that portion, clipped to y>=eps_down),
     # so there are no unverified boundary slivers (rounding-level coverage).
     xi,xs,ti,ts=c
-    y_min=yv(xi,ti); y_max=yv(xs,ts)
+    y_max=yv(xs,ts)
     if y_max < Y_FLOOR:      return 'discard'    # fully below eps_down -> Omega_down
-    if y_min > Y_TOP:        return 'discard'    # fully above Y_TOP    -> Omega_up
     if s_omega(xi,ti) > 1.0: return 'discard'    # fully outside Omega (inner corner already out)
+    # Upper boundary of Omega_mid is the CIRCLE dist(.,p0)=eps_up. A cell fully inside
+    # that disk is covered by Omega_up (the disk lies in {y>=Y_TOP}=Omega_up). Every
+    # other cell -- including the strip-minus-disk above Y_TOP and cells straddling the
+    # circle -- has an Omega_mid portion (outside the disk) and is VERIFIED up to the
+    # circle. (B is evaluated at the inner corner, which is the farthest-from-p0 corner,
+    # hence outside the disk and in Omega_mid.)
+    cs=((xi,ti),(xs,ti),(xi,ts),(xs,ts))
+    if max(d2(x,t) for x,t in cs) < EPS_UP*EPS_UP: return 'discard'  # fully inside disk -> Omega_up
     return 'verify'
 
 def Bk(x,t,lam):
@@ -107,8 +125,11 @@ def eval_cell(item):
         lam_use=lam1_float(xs,ts)*(1.0-HAIRCUT); src='fem'
     B1=B2=math.inf
     for (x,t) in portion_eval_points(cell):
-        if s_omega(x,t) > 1.0+1e-12: continue     # eval point not in Omega -> skip
+        if s_omega(x,t) > 1.0+1e-12: continue      # eval point outside Omega -> skip
+        if d2(x,t) < EPS_UP*EPS_UP: continue       # eval point inside the disk (Omega_up) -> skip
         b1,b2=Bk(x,t,lam_use); B1=min(B1,b1); B2=min(B2,b2)
+    if B1==math.inf:                               # no valid Omega_mid eval point -> refine
+        return {'addr':addr,'cell':cell,'status':'split','B1':0.0,'B2':0.0,'src':src}
     ok=(B1>0.0)and(B2>0.0)
     return {'addr':addr,'cell':cell,'status':'leaf' if ok else 'split',
             'B1':B1,'B2':B2,'src':src}
@@ -140,10 +161,12 @@ def build(nproc=None,max_depth=MAX_DEPTH):
                 leaves.append(r); nl+=1; ndb+= (r.get('src')=='db')
             else:                                   # split (B not yet positive)
                 ns+=1
-                if depth<max_depth:
+                if len(r['addr']) < MAXLEN_ADDR and depth<max_depth:
                     nxt.extend([(a,c,None) for a,c in children(r['cell'],r['addr'])])
                 else:
-                    unverified.append(r)            # still failing at max depth
+                    # realistic-size cap reached: keep as a leaf (will be an LG cell,
+                    # which the rigorous Lehmann-Goerisch pass verifies at this size).
+                    leaves.append({**r,'status':'leaf','capped':True}); nl+=1
         tag='iter1(DB)' if depth==0 else f'iter{depth+1}'
         print(f"  {tag:10s} in={len(frontier):8d} leaf={nl:7d}(db={ndb:6d}) "
               f"split={ns:7d} discard={nd:7d} ({time.time()-t0:.1f}s)",flush=True)
@@ -151,15 +174,30 @@ def build(nproc=None,max_depth=MAX_DEPTH):
     pool.close(); pool.join()
     return leaves,boundary,unverified,discarded
 
+def cell_dist_p0(cell):
+    # closest approach of the cell to p0 (inner corner = farthest; use cell-center dist
+    # but clamp by the nearest corner so the LG band is assigned generously).
+    xi,xs,ti,ts=cell
+    ds=[math.hypot(x-0.5,yv(x,t)-P0[1]) for x,t in ((xi,ti),(xs,ti),(xi,ts),(xs,ts))]
+    return min(ds)
+
 def write_cell_def(rows,path):
+    # FEM method per the user's rule: CR only, except LG in the equilateral neighbourhood.
     hdr=['address','x_inf','x_sup','theta_inf','theta_sup',
          'mesh_size_lower_cr','isLG','mesh_size_lower_LG','fem_order_lower_LG']
+    nLG=0
     with open(path,'w',newline='') as f:
         w=csv.writer(f); w.writerow(hdr)
         for r in rows:
-            xi,xs,ti,ts=r['cell']
+            xi,xs,ti,ts=r['cell']; d=cell_dist_p0(r['cell'])
+            if d < DIST_LG or r.get('capped'):       # equilateral neighbourhood -> LG
+                isLG=1; mesh_cr=MESH_CR_FINE; mesh_lg=MESH_LG; ord_lg=ORDER_LG; nLG+=1
+            else:                                    # everywhere else -> CR only
+                isLG=0; mesh_cr=(MESH_CR_FINE if d<DIST_LG+0.1 else MESH_CR)
+                mesh_lg=MESH_LG; ord_lg=ORDER_LG
             w.writerow([r['addr'],f'{xi:.17g}',f'{xs:.17g}',f'{ti:.17g}',f'{ts:.17g}',
-                        '0.04','1','0.1249','2'])
+                        f'{mesh_cr:g}',isLG,f'{mesh_lg:g}',ord_lg])
+    return nLG
 
 if __name__=='__main__':
     nproc=int(sys.argv[1]) if len(sys.argv)>1 else None
@@ -174,10 +212,14 @@ if __name__=='__main__':
     print(f"[build] boundary slivers (max depth)  : {len(boundary)}")
     print(f"[build] UNVERIFIED at max depth       : {len(unverified)}")
     print(f"[build] discarded outside Omega_mid   : {discarded}")
+    ncap=sum(1 for r in leaves if r.get('capped'))
     if leaves:
         d=sorted(len(r['addr']) for r in leaves)
-        print(f"[build] leaf level min/median/max     : {d[0]}/{d[len(d)//2]}/{d[-1]}")
-    write_cell_def(leaves,'/tmp/cell_def_omega_mid_rebuilt.csv')
+        print(f"[build] leaf address-len min/median/max: {d[0]}/{d[len(d)//2]}/{d[-1]}  (cap {MAXLEN_ADDR})")
+        print(f"[build] capped-at-cap leaves (->LG)   : {ncap}")
+    nLG=write_cell_def(leaves,'/tmp/cell_def_omega_mid_rebuilt.csv')
     print(f"[build] wrote /tmp/cell_def_omega_mid_rebuilt.csv ({len(leaves)} cells)",flush=True)
+    print(f"[build] method: LG cells = {nLG} ({100.0*nLG/max(1,len(leaves)):.1f}%), "
+          f"CR-only cells = {len(leaves)-nLG} ({100.0*(len(leaves)-nLG)/max(1,len(leaves)):.1f}%)",flush=True)
     if unverified: write_cell_def(unverified,'/tmp/cell_def_unverified.csv')
     if boundary:   write_cell_def(boundary,'/tmp/cell_def_boundary.csv')
