@@ -74,6 +74,19 @@ LowerBoundsIneq/
 
 ---
 
+## Core Libraries & Dependencies
+
+This project relies on specialized libraries for verified numerical computation:
+
+1. **INTLAB**: The fundamental toolbox for rigorous interval arithmetic in MATLAB.
+   - **Source:** [http://www.tuhh.de/ti3/intlab/](http://www.tuhh.de/ti3/intlab/) [INTLAB_V12, INTLAB_V14 were used for the computation.]
+2. Revised version of **VFEM2D**: Used for rigorous finite element matrix assembly and high-precision eigenvalue bounds (Lehmann–Goerisch method).
+   - **Source:** [https://github.com/xfliu/VFEM2D](https://github.com/xfliu/VFEM2D) [2025/12/13]
+3. **veigs**: Used for solving generalized matrix eigenvalue problems with rigorous error bounds with the information of indices.
+   - **Source:** [https://github.com/yuuka-math/veigs](https://github.com/yuuka-math/veigs) [2025/12/13]
+
+---
+
 ## Quick start
 
 1. Clone the repository and `cd` into it.
