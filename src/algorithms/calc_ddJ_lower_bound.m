@@ -121,7 +121,11 @@ function [ddJ_lower, components] = calc_ddJ_lower_bound(conjecture_type, triangl
     fprintf('Step 3: Computing ddJ lower bound...\n');
 
     % Constants
-    pi_val = I_intval(pi);
+    % Route through I_pi so that, in interval mode, pi is enclosed via
+    % intval('pi') (rigorous enclosure of the true constant). I_intval(pi)
+    % would enclose only the double-precision value of pi, which does not
+    % contain the exact pi.
+    pi_val = I_pi;
 
     if strcmpi(conjecture_type, 'J1')
         % J1 = lambda_1 * Area - C1 * Perim^2 / Area - C2
