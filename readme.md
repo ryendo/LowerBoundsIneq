@@ -30,7 +30,7 @@ The parameter space of triangles (up to similarity, restricted by symmetry to $x
 
 - a **rigorous FEM lower bound** for $\lambda_1$ (Crouzeix–Raviart, optionally sharpened by Lehmann–Goerisch);
 - **rigorous interval bounds** on area and perimeter;
-- **INTLAB** interval arithmetic to propagate all floating-point rounding errors.
+- **INTLAB** interval arithmetic to enclose rounding errors in the verified interval computations.
 
 If every cell yields $J_k\ge 0$ then $J_k\ge 0$ on all of $\Omega_{\rm mid}$.
 
@@ -75,6 +75,8 @@ This project relies on specialized libraries for verified numerical computation:
    - **Source:** [https://github.com/xfliu/VFEM2D](https://github.com/xfliu/VFEM2D) [2025/12/13]
 3. **veigs**: Used for solving generalized matrix eigenvalue problems with rigorous error bounds with the information of indices.
    - **Source:** [https://github.com/yuuka-math/veigs](https://github.com/yuuka-math/veigs) [2025/12/13]
+
+The MATLAB Parallel Computing Toolbox is used only to distribute independent cell computations via `parpool`/`parfor`.  It is not part of the interval-arithmetic error control; each worker initializes INTLAB before running its assigned cells.
 
 ---
 
