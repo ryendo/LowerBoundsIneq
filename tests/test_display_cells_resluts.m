@@ -1,7 +1,7 @@
 %% Main Script: Visualize Verification Results for J1 and J2
 clear; clc; close all;
 
-cell_def_path = 'inputs/cell_def.csv';
+cell_def_path = 'inputs/cell_def_v3.csv';
 results_path = 'results/J1_OmegaMid.csv';
 
 % --- 1. Load Data ---

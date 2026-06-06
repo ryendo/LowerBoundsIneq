@@ -1,243 +1,86 @@
-%% Visualize cells together with the true boundary of Omega_mid
+%% Main Script: Visualize Verification Results
 clear; clc; close all;
 
-% ===== Parameters of Omega_mid =====
-epsUp   = 0.122;
-epsDown = 0.04;
-xMin    = 0.5;
-xMax    = 1.0;
-
-% ===== Input file =====
-cell_def_path = 'cell_def.csv';
-
-% ===== Option: specify cell IDs to highlight in red =====
-highlight_cell_ids = [];   % set [] if not needed
-
-% ===== Load cell definition =====
 try
-    Cell_Def = readtable(cell_def_path);
+    Cell_Def = readtable('cell_def.csv');
     if ismember('i', Cell_Def.Properties.VariableNames)
         Cell_Def = renamevars(Cell_Def, 'i', 'cell_id');
     end
 catch ME
-    error('Error loading %s\n%s', cell_def_path, ME.message);
+    error('Error loading CSV files. Ensure files exist in the current folder.\n%s', ME.message);
 end
 
-% ===== Visualize =====
-visualize_cells_omegamid(Cell_Def, epsUp, epsDown, xMin, xMax, highlight_cell_ids);
+visualize_cells(Cell_Def)
 
-%% ===== Local function =====
-function visualize_cells_omegamid(Cell_Def, epsUp, epsDown, xMin, xMax, highlight_cell_ids)
-
-    if nargin < 6
-        highlight_cell_ids = [];
-    end
-
+%% --- Local Function: Visualization Logic ---
+function visualize_cells(Cell_Def)
     Data = Cell_Def;
     num_cells = height(Data);
-
-    % --- Required columns ---
-    req = {'x_inf','x_sup','theta_inf','theta_sup'};
-    for j = 1:numel(req)
-        if ~ismember(req{j}, Data.Properties.VariableNames)
-            error('Column "%s" is missing.', req{j});
-        end
-    end
-
-    x_inf = Data.x_inf(:);
-    x_sup = Data.x_sup(:);
-    t_inf = Data.theta_inf(:);
-    t_sup = Data.theta_sup(:);
-
-    % --- Cell IDs ---
-    if ismember('cell_id', Data.Properties.VariableNames)
-        id_list = Data.cell_id(:);
-    else
-        warning('Variable "cell_id" not found. Using row numbers instead.');
-        id_list = (1:num_cells).';
-    end
-
-    % --- Colors ---
-    rng(1);
-    face_colors = rand(num_cells, 3);
-
-    highlight_mask = ismember(id_list, highlight_cell_ids(:));
-    face_colors(highlight_mask, :) = repmat([1 0 0], sum(highlight_mask), 1);
-
-    % --- Cell polygons in (x,theta) ---
+    
+    x_inf = Data.x_inf;
+    x_sup = Data.x_sup;
+    t_inf = Data.theta_inf;
+    t_sup = Data.theta_sup;
+    
+    face_colors = repmat([0.6 0.8 1.0], num_cells, 1);
+    
     X_log = [x_inf'; x_sup'; x_sup'; x_inf'];
     T_log = [t_inf'; t_inf'; t_sup'; t_sup'];
-
-    % --- Cell polygons in (x,y), with y = x tan(theta) ---
+    
     X_phys = X_log;
     Y_phys = X_log .* tan(T_log);
-
-    % --- Centers of cells ---
-    x_center = (x_inf + x_sup) / 2;
-    t_center = (t_inf + t_sup) / 2;
-    y_center = x_center .* tan(t_center);
-
-    % --- Print highlighted cells ---
-    if any(highlight_mask)
-        fprintf('Highlighted cells:\n');
-        idx = find(highlight_mask);
-        for k = idx(:).'
-            fprintf('  cell_id = %d : center (x,theta) = (%.16g, %.16g), center (x,y) = (%.16g, %.16g)\n', ...
-                id_list(k), x_center(k), t_center(k), x_center(k), y_center(k));
-        end
+    
+    dark_red = [0.6 0 0];
+    
+    % --- Plot 1: (x, theta) Domain ---
+    figure('Name', 'Cells: (x, theta)', 'Color', 'w');
+    p1 = patch(X_log, T_log, 'w');
+    
+    if exist('set_patch_properties', 'file')
+        set_patch_properties(p1, face_colors);
     else
-        fprintf('No highlighted cells found.\n');
+        set(p1, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
     end
-
-    % ===== True boundary of Omega_mid =====
-    x_bnd = linspace(xMin, xMax, 5000);
-
-    y_circle = sqrt(max(0, 1 - x_bnd.^2));
-
-    r2 = epsUp^2 - (x_bnd - 0.5).^2;
-    y_ball = inf(size(x_bnd));
-    mask_ball = (r2 >= 0);
-    y_ball(mask_ball) = sqrt(3)/2 - sqrt(r2(mask_ball));
-
-    y_upper = min(y_circle, y_ball);
-    y_lower = epsDown * ones(size(x_bnd));
-
-    mask_target = y_upper >= y_lower;
-    x_tar = x_bnd(mask_target);
-    y_up_tar = y_upper(mask_target);
-    y_lo_tar = y_lower(mask_target);
-
-    theta_upper = atan(y_upper ./ x_bnd);
-    theta_lower = atan(y_lower ./ x_bnd);
-
-    th_up_tar = theta_upper(mask_target);
-    th_lo_tar = theta_lower(mask_target);
-
-    dark_red   = [0.65 0.0 0.0];
-    dark_blue  = [0.0 0.25 0.7];
-    dark_green = [0.0 0.5 0.0];
-    gray_col   = [0.4 0.4 0.4];
-
-    %% ===== Plot 1: (x, theta) =====
-    figure('Name', 'Cells and Omega_{mid}: (x, \theta)', 'Color', 'w');
-    p1 = patch(X_log, T_log, 'w');
-    set(p1, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
+    
     hold on;
-
-    % Shade true Omega_mid region
-    if ~isempty(x_tar)
-        fill([x_tar, fliplr(x_tar)], [th_lo_tar, fliplr(th_up_tar)], ...
-             [1.0 0.92 0.92], 'EdgeColor', 'none', 'FaceAlpha', 0.45);
-    end
-
-    % Re-draw cells on top of shading
-    delete(p1);
-    p1 = patch(X_log, T_log, 'w');
-    set(p1, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
-
-    % True Omega_mid boundaries
-    plot(x_tar, th_lo_tar, '-', 'Color', dark_red, 'LineWidth', 2.0);
-    plot(x_tar, th_up_tar, '-', 'Color', dark_red, 'LineWidth', 2.0);
-
-    % Helpful reference curves
-    plot(x_bnd, acos(max(min(x_bnd,1),-1)), '--', 'Color', gray_col, 'LineWidth', 1.2); % theta of circle
-    plot(x_bnd, atan((epsDown * ones(size(x_bnd))) ./ x_bnd), '--', 'Color', dark_green, 'LineWidth', 1.0);
-
+    % 領域の x の範囲は 0.5 から 1 になる
+    x_bnd = linspace(0.5, 1, 100);
+    
+    theta_arc = acos(x_bnd); 
+    theta_line = zeros(size(x_bnd)); % y=0 のため theta=0
+    
+    plot(x_bnd, theta_arc, 'Color', dark_red, 'LineWidth', 2); 
+    plot(x_bnd, theta_line, 'Color', dark_red, 'LineWidth', 2); 
+    plot([0.5, 0.5], [0, acos(0.5)], 'Color', dark_red, 'LineWidth', 2); 
+    
     xlabel('x');
     ylabel('\theta');
-    title('\Omega_{mid} and cell partition in (x,\theta)');
+    axis tight; 
     grid on;
-    box on;
-    xlim([min(x_inf)-0.002, max(x_sup)+0.002]);
-
-    th_all = [t_inf; t_sup; th_lo_tar(:); th_up_tar(:)];
-    ylim([max(0, min(th_all)-0.005), max(th_all)+0.005]);
-
-    legend({'true \Omega_{mid}', '', 'cells', 'outer circle (reference)', 'lower bound (reference)'}, ...
-           'Location', 'best');
     hold off;
-
-    %% ===== Plot 2: (x, y) =====
-    figure('Name', 'Cells and Omega_{mid}: (x, y)', 'Color', 'w');
+    
+    % --- Plot 2: (x, y) Domain ---
+    figure('Name', 'Cells: (x, y)', 'Color', 'w');
     p2 = patch(X_phys, Y_phys, 'w');
-    set(p2, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
-    hold on;
-
-    % Shade true Omega_mid region
-    if ~isempty(x_tar)
-        fill([x_tar, fliplr(x_tar)], [y_lo_tar, fliplr(y_up_tar)], ...
-             [1.0 0.92 0.92], 'EdgeColor', 'none', 'FaceAlpha', 0.45);
+    
+    if exist('set_patch_properties', 'file')
+        set_patch_properties(p2, face_colors);
+    else
+        set(p2, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
     end
-
-    % Re-draw cells on top of shading
-    delete(p2);
-    p2 = patch(X_phys, Y_phys, 'w');
-    set(p2, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
-
-    % True Omega_mid boundaries
-    plot(x_tar, y_lo_tar, '-', 'Color', dark_red, 'LineWidth', 2.0);
-    plot(x_tar, y_up_tar, '-', 'Color', dark_red, 'LineWidth', 2.0);
-
-    % Helpful reference curves
-    plot(x_bnd, y_circle, '--', 'Color', dark_blue, 'LineWidth', 1.2);
-    plot(x_bnd(mask_ball), y_ball(mask_ball), '--', 'Color', gray_col, 'LineWidth', 1.2);
-
+    
+    hold on;
+    y_arc = sqrt(1 - x_bnd.^2);
+    y_line = zeros(size(x_bnd));
+    
+    plot(x_bnd, y_arc, 'Color', dark_red, 'LineWidth', 2); 
+    plot(x_bnd, y_line, 'Color', dark_red, 'LineWidth', 2); 
+    plot([0.5, 0.5], [0, sqrt(1 - 0.5^2)], 'Color', dark_red, 'LineWidth', 2); 
+    
     xlabel('x');
     ylabel('y');
-    title('\Omega_{mid} and cell partition in (x,y)');
-    axis equal;
+    axis equal; 
+    axis tight;
     grid on;
-    box on;
-
-    xlim([min(x_inf)-0.002, max(x_sup)+0.002]);
-    y_all = [Y_phys(:); y_lo_tar(:); y_up_tar(:)];
-    ylim([max(0, min(y_all)-0.002), max(y_all)+0.002]);
-
-    legend({'true \Omega_{mid}', '', 'cells', 'unit circle (reference)', 'ball lower branch (reference)'}, ...
-           'Location', 'best');
     hold off;
-
-    %% ===== Plot 3: zoom around highlighted cells (optional) =====
-    if any(highlight_mask)
-        idx = find(highlight_mask);
-
-        x0 = min(x_inf(idx));
-        x1 = max(x_sup(idx));
-        y0 = min(x_inf(idx) .* tan(t_inf(idx)));
-        y1 = max(x_sup(idx) .* tan(t_sup(idx)));
-
-        dx = max(0.003, 0.2 * (x1 - x0));
-        dy = max(0.003, 0.2 * (y1 - y0));
-
-        figure('Name', 'Zoom near highlighted cells: (x, y)', 'Color', 'w');
-        p3 = patch(X_phys, Y_phys, 'w');
-        set(p3, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
-        hold on;
-
-        if ~isempty(x_tar)
-            fill([x_tar, fliplr(x_tar)], [y_lo_tar, fliplr(y_up_tar)], ...
-                 [1.0 0.92 0.92], 'EdgeColor', 'none', 'FaceAlpha', 0.45);
-            delete(p3);
-            p3 = patch(X_phys, Y_phys, 'w');
-            set(p3, 'FaceColor', 'flat', 'FaceVertexCData', face_colors, 'EdgeColor', 'k');
-
-            plot(x_tar, y_lo_tar, '-', 'Color', dark_red, 'LineWidth', 2.0);
-            plot(x_tar, y_up_tar, '-', 'Color', dark_red, 'LineWidth', 2.0);
-        end
-
-        plot(x_bnd, y_circle, '--', 'Color', dark_blue, 'LineWidth', 1.0);
-        plot(x_bnd(mask_ball), y_ball(mask_ball), '--', 'Color', gray_col, 'LineWidth', 1.0);
-
-        xlabel('x');
-        ylabel('y');
-        title('Zoom near highlighted cells');
-        axis equal;
-        grid on;
-        box on;
-
-        xlim([x0 - dx, x1 + dx]);
-        ylim([y0 - dy, y1 + dy]);
-        hold off;
-    end
-
 end

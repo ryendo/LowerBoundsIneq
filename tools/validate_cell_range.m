@@ -1,4 +1,4 @@
-% Strict coverage test of Omega_mid by cells in ../inputs/cell_def_v4.csv
+% Strict coverage test of Omega_mid by cells in ../inputs/cell_def.csv
 clear; clc;
 
 % Parameters of Omega_mid
@@ -9,7 +9,7 @@ xMax    = I_intval('1.0');
 tol     = I_intval('1.0e-12');
 
 % Read cells defined in (x, theta)
-T  = readtable('inputs/cell_def_v6.csv');
+T  = readtable('inputs/cell_def.csv');
 xL = T.x_inf;
 xR = T.x_sup;
 tL = T.theta_inf;

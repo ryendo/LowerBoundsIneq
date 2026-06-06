@@ -10,7 +10,6 @@ function [verified, J_lower, diagnostics] = verify_J_positive(conjecture_type, c
 %   cell_data: structure with fields:
 %     - x_inf, x_sup: x-coordinate bounds (strings or numbers)
 %     - theta_inf, theta_sup: theta angle bounds (strings or numbers)
-%     - mesh_size_upper, fem_order_upper: FEM parameters for upper bound
 %     - mesh_size_lower_cr: mesh size for CR lower bound
 %     - isLG: use Lehmann-Goerisch (1) or CR (0)
 %     - mesh_size_lower_LG, fem_order_lower_LG: LG parameters (if isLG=1)

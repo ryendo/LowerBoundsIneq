@@ -1,16 +1,21 @@
 #!/usr/bin/bash
+# args: gmsh_command mesh_path suffix
+# Generates a 2D mesh from <mesh_path>/temp<suffix>.geo.
 
-gmsh_command=$1 
+gmsh_command=$1
 mesh_path=$2
-echo "mesh_path", mesh_path
-# Force gmsh to use system C++ runtime (Ubuntu) rather than the ones overwritten in matlab env
-export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
+suffix=$3
 
-# Optional: clear MATLAB’s library path if called from MATLAB
+# Force gmsh to use the system C++ runtime rather than the one MATLAB
+# injects via LD_LIBRARY_PATH; this is needed on Linux hosts where the
+# MATLAB-provided libstdc++ is older than the one gmsh was built against.
+export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6
 unset LD_LIBRARY_PATH
 
-# ${gmsh_command} ${mesh_path}/temp.geo -2 -format msh2 -bin 0 -o ${mesh_path}/temp.msh
+# If the gmsh binary is a Python-wrapped script (some conda distributions),
+# ensure a python interpreter is on PATH. Uncomment and edit if needed:
+# export PATH=$HOME/miniconda3/bin:$PATH
 
-${gmsh_command} ${mesh_path}/temp.geo -2 -format msh2 -o ${mesh_path}/temp.msh \
-  -setnumber Mesh.Binary 0 \
-  -setnumber Mesh.ElementOrder 1
+${gmsh_command} ${mesh_path}/temp${suffix}.geo -2 -format msh2 -o ${mesh_path}/temp${suffix}.msh \
+    -setnumber Mesh.Binary 0 \
+    -setnumber Mesh.ElementOrder 1

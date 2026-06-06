@@ -20,7 +20,7 @@ global INTERVAL_MODE;
 
 % Initialize INTLAB mode if needed
 if isempty(INTERVAL_MODE)
-    INTERVAL_MODE = 1;
+    INTERVAL_MODE = 0;
 end
 
 %% ========================================================================
@@ -103,8 +103,6 @@ for i_cell = cell_start:cell_end
     cell_struct.x_sup = num2str(current_cell.x_sup, '%.17g');
     cell_struct.theta_inf = num2str(current_cell.theta_inf, '%.17g');
     cell_struct.theta_sup = num2str(current_cell.theta_sup, '%.17g');
-    cell_struct.mesh_size_upper = current_cell.mesh_size_upper;
-    cell_struct.fem_order_upper = current_cell.fem_order_upper;
     cell_struct.mesh_size_lower_cr = current_cell.mesh_size_lower_cr;
     cell_struct.isLG = current_cell.isLG;
 

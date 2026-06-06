@@ -1,0 +1,18 @@
+# INTLAB library (download separately; not versioned to keep repo small)
+Intlab_V12/
+/Intlab_V12
+
+# runtime artifacts
+results_raw/
+src/mesh/temp_s*.geo
+src/mesh/temp_s*.msh
+src/mesh/temp_w*.geo
+src/mesh/temp_w*.msh
+*.log
+
+# editor / OS
+.DS_Store
+*.swp
+*.bak
+*.bak.*
+__pycache__/

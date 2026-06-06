@@ -99,14 +99,15 @@ end
 % ========================================================================
 function report = certify_sign_d2Jdx2_over_OmegaUp(conjecture_type, eps_rect, Nx, Ny, N_spec, mesh_params)
 % Cover (a neighborhood of) Ω_up by rectangles R_ij using the paper grid:
-%   p_ij = (1/2 + eps_rect*i/Nx,  sqrt(3)/2 - eps_rect*j/Ny)
-% and certify a rigorous *lower bound* on ∂²J/∂x² over each R_ij.
+%   p_ij = (1/2 + 2*eps_rect*i/Nx,  sqrt(3)/2 - eps_rect*j/Ny)
+% Partition of [1/2, 1/2 + 2*eps_rect] x [sqrt(3)/2 - eps_rect, sqrt(3)/2],
+% which covers Ω_up. Certify a rigorous *lower bound* on ∂²J/∂x² over each R_ij.
 
 x0    = I_intval('0.5');
 y_top = sqrt(I_intval('3'))/2;
 
-x_nodes = x0    + eps_rect*(0:Nx)/Nx;   % length Nx+1
-y_nodes = y_top - eps_rect*(0:Ny)/Ny;   % length Ny+1 (descending)
+x_nodes = x0    + 2*eps_rect*(0:Nx)/Nx;   % length Nx+1, spans [1/2, 1/2+2*eps]
+y_nodes = y_top - eps_rect*(0:Ny)/Ny;     % length Ny+1, descending in [sqrt(3)/2-eps, sqrt(3)/2]
 
 L  = I_zeros(Ny, Nx);                   % L(j,i) = lower bound on cell (i,j)
 ok = true(Ny, Nx);

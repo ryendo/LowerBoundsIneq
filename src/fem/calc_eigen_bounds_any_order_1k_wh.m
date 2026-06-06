@@ -1,13 +1,13 @@
-function [eig_bounds, U, K_CG, M_CG, A_xx, A_xy, A_yy] = calc_eigen_bounds_any_order_1k_wh(neig,tri_intval,N_LG,N_rho,LagrangeOrder)
+function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy] = calc_eigen_bounds_any_order_1k_wh(neig,tri_intval,N_LG,N_rho,LagrangeOrder)
 
     % =============================================================
     % Step 1: Compute rho <= lambda_{n+1} using CR + explicit C_h
     % =============================================================
-    format compact long infsup
+    
     mesh_size_rho = 1/N_rho;
 
-    a = I_intval(tri_intval(5));
-    b = I_intval(tri_intval(6));
+    a = tri_intval(5);
+    b = tri_intval(6);
         
     meshCR = make_mesh_by_gmsh(a, b, mesh_size_rho);
 
@@ -73,6 +73,9 @@ function [eig_bounds, U, K_CG, M_CG, A_xx, A_xy, A_yy] = calc_eigen_bounds_any_o
     [lamCG, U, U_with_bdry, K_CG, M_CG, A_xx, A_xy, A_yy, ~] = ...    
         laplace_eig_lagrange_detailed(LagrangeOrder, vertCG, edgeCG, triCG, bdCG, neig);
 
+    LA_eigf=U; A_grad=K_CG; A_L2=M_CG;
+
+
     Lambda = max(lamCG(1:neig)); % upper bound for lambda_n
     if ~(I_sup(Lambda) < I_inf(rho))
         warning(['Separation not verified (need Lambda < rho). ', ...
@@ -117,7 +120,7 @@ function [eig_bounds, U, K_CG, M_CG, A_xx, A_xy, A_yy] = calc_eigen_bounds_any_o
 
     % Sort by I_midpoints and return verified lower endpoints
     [~, idx] = sort(I_mid(lamLow));
-    lamLow = I_intval(I_inf(lamLow(idx)'));
+    lamLow = lamLow(idx)';
 
     eig_bounds = I_hull(lamCG,lamLow); % 1-by-neig
 
