@@ -1,12 +1,16 @@
 function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1_lower, area_bounds, perimeter_bounds)
-% COMPUTE_J_LOWER_BOUND (Lemma-aligned):
-% Compute the Lemma lower bound:
-%   J_k(T^p) >= B_k( p_{i+1,j} ; lambda1(T^{p_{i+1,j+1}}) )
-% They are the two vertex values produced by compute_geometry_bounds:
-%   area_bounds(1)      = Area at p_{i+1,j}
-%   area_bounds(2)      = Area at p_{i,j+1}
-%   perimeter_bounds(1) = Perimeter at p_{i+1,j}
-%   perimeter_bounds(2) = Perimeter at p_{i,j+1}
+% COMPUTE_J_LOWER_BOUND (Lemma 4.9 / Algorithm 4 — CORRECTED VERTEX):
+% Compute the rigorous per-cell lower bound:
+%   J_k(T^p) >= B_k( p_{i,j} ; lambda1(T^{p_{i+1,j+1}}) )   for all p in the cell,
+% where p_{i,j} = (x_inf, theta_inf) is the cell minimiser of B_k (B~_k is
+% increasing in x and theta, Lemma 4.9). The geometry comes from
+% compute_geometry_bounds as RIGOROUS INTERVAL enclosures:
+%   area_bounds(1)      = |T|  at p_{i,j}    = (x_inf, theta_inf)   <- used here
+%   perimeter_bounds(1) = |dT| at p_{i,j}    = (x_inf, theta_inf)
+%   area_bounds(2)      = |T|  at p_{i+1,j+1} (diagnostic only)
+%   perimeter_bounds(2) = |dT| at p_{i+1,j+1} (diagnostic only)
+% B_k is evaluated in interval arithmetic and J_lower = I_inf(B_k) is a
+% rigorous lower bound over the thin geometry enclosure.
 %
 % lambda1_lower:
 %   - scalar: interpreted as lam_low = lower bound for lambda1(T^{p_{i+1,j+1}})
@@ -35,9 +39,9 @@ function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1
     end
 
     % -----------------------------------------
-    % Lemma vertices geometry (by convention)
+    % Lemma vertex geometry: p_{i,j} = (x_inf, theta_inf) for the LOWER bound
+    % (rigorous interval enclosures from compute_geometry_bounds)
     % -----------------------------------------
-    % p_{i+1,j} geometry for the LOWER bound
     A_L = I_intval(area_bounds(1));
     P_L = I_intval(perimeter_bounds(1));
 
@@ -57,7 +61,7 @@ function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1
 
         diagnostics = struct();
         diagnostics.conjecture = 'J1';
-        diagnostics.B_eval_point = 'p_{i+1,j}';
+        diagnostics.B_eval_point = 'p_{i,j}';
         diagnostics.lambda_used = lam_low;
         diagnostics.A_used = A_L;
         diagnostics.P_used = P_L;
@@ -83,7 +87,7 @@ function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1
 
         diagnostics = struct();
         diagnostics.conjecture = 'J2';
-        diagnostics.B_eval_point = 'p_{i+1,j}';
+        diagnostics.B_eval_point = 'p_{i,j}';
         diagnostics.lambda_used = lam_low;
         diagnostics.A_used = A_L;
         diagnostics.P_used = P_L;
