@@ -37,6 +37,14 @@ function [area_bounds, perimeter_bounds, diagnostics] = compute_geometry_bounds(
     % ----------------------------
     % p_{i,j} = (x_inf, theta_inf): the cell MINIMISER of B_k  -> lower bound
     xL = x1;  tL = t1;  yL = xL * tan(tL);
+    % Clip the lower vertex UP to the Omega_mid floor y >= eps_down for
+    % bottom-straddle cells (inner corner in Omega_down): the degenerate y<eps_down
+    % corner is outside Omega_mid and numerically delicate. The clipped point
+    % (x_inf, eps_down) is the relevant Omega_mid extreme; J is large there
+    % (thin triangle), so B>0 easily.
+    if I_mid(yL) < 0.04
+        yL = I_intval('0.04');
+    end
     % p_{i+1,j+1} = (x_sup, theta_sup): the cell MAXIMISER of B_k -> diagnostic only
     xU = x2;  tU = t2;  yU = xU * tan(tU);
 
