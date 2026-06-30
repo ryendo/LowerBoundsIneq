@@ -1,15 +1,22 @@
-function clusters = auto_cluster_eigenvalues(lam, relative_threshold)
-% AUTO_CLUSTER_BY_WIDTH: Automatically groups eigenvalues into clusters
-% based on the total width of the cluster.
+function clusters = auto_cluster_eigenvalues(lam, relative_gap_threshold)
+%AUTO_CLUSTER_EIGENVALUES  Group eigenvalue enclosures into eigenspaces.
 %
-% A cluster grows as long as its width (λ_max - λ_min) does not exceed a
-% threshold defined relative to its starting eigenvalue.
+% A cluster grows while consecutive eigenvalue enclosures are not provably
+% separated.  This is the safe choice for eigenspace estimates: if two
+% enclosures overlap, a one-dimensional eigenfunction error is not a
+% well-posed certified quantity, and the whole overlapping block must be
+% treated as one eigenspace.
+%
+% relative_gap_threshold optionally merges very small positive gaps as a
+% conservative near-degeneracy guard.  Use 0 to merge only overlapping
+% intervals.  Existing callers use 0.01.
 %
 % INPUTS:
 %   lam:                (Interval Vector) Rigorous bounds for eigenvalues.
-%   relative_threshold: (Scalar) The maximum allowed relative width of a cluster.
-%                       Example: 0.02 means a cluster's width cannot exceed 2%
-%                       of its starting eigenvalue's value.
+%   relative_gap_threshold:
+%                       (Scalar) Merge if the positive gap before the next
+%                       enclosure is no larger than this fraction of the
+%                       cluster scale.  Example: 0.01 means 1%.
 %
 % OUTPUT:
 %   clusters:           (Cell Array) The determined eigenvalue clusters.
@@ -19,29 +26,25 @@ clusters = {};
 start_idx = 1;
 
 while start_idx <= num_eigs
-    % Define the absolute width threshold for this new cluster based on its
-    % starting eigenvalue. We use the upper bound for a robust criterion.
-    threshold = I_sup(lam(start_idx)) * relative_threshold;
-    
     end_idx = start_idx;
+    cluster_sup = I_sup(lam(start_idx));
+    cluster_scale = max(1, abs(I_mid(lam(start_idx))));
+
     for j = (start_idx + 1):num_eigs
-        % Calculate the width of the potential cluster from start_idx to j
-        cluster_width = I_sup(lam(j)) - I_inf(lam(start_idx));
-        
-        if cluster_width > threshold
-            % The width exceeds the threshold, so the cluster ends at j-1.
+        gap = I_inf(lam(j)) - cluster_sup;
+        gap_tolerance = relative_gap_threshold * cluster_scale;
+
+        if gap > gap_tolerance
             break;
         end
-        % If width is within the threshold, expand the cluster
+
         end_idx = j;
+        cluster_sup = max(cluster_sup, I_sup(lam(j)));
+        cluster_scale = max(cluster_scale, abs(I_mid(lam(j))));
     end
-    
-    % Finalize and store the current cluster
+
     clusters{end+1} = start_idx:end_idx;
-    
-    % Move to the start of the next cluster
     start_idx = end_idx + 1;
 end
 
-% fprintf('Automatic clustering by width determined %d clusters.\n', length(clusters));
 end

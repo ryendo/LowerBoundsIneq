@@ -13,8 +13,8 @@ function [Est_grad, delta_a_sq, delta_b_sq, info] = calc_grad_error_bounds( ...
 
     num_eigs = length(lam);
 
-    delta_a_sq = I_intval(I_ones(num_clusters,1));
-    delta_b_sq = I_intval(I_ones(num_clusters,1));
+    delta_a_sq = I_intval(Inf(num_clusters,1));
+    delta_b_sq = I_intval(Inf(num_clusters,1));
 
     info = struct();
     info.ok     = false(num_clusters,1);
