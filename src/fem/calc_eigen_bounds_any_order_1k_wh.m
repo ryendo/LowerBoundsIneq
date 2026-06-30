@@ -1,4 +1,4 @@
-function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy] = calc_eigen_bounds_any_order_1k_wh(neig,tri_intval,N_LG,N_rho,LagrangeOrder)
+function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy, U_with_bdry, meshCG] = calc_eigen_bounds_any_order_1k_wh(neig,tri_intval,N_LG,N_rho,LagrangeOrder)
 
     % =============================================================
     % Step 1: Compute rho <= lambda_{n+1} using CR + explicit C_h
