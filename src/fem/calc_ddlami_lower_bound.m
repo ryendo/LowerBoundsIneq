@@ -79,7 +79,8 @@ end
 mu_interval = mu_raw * scale_interval;
 mu_h = mu_h_raw * scale_interval;
 mu_clusters = auto_cluster_eigenvalues(mu_interval, 0.01);
-eta_psi = calc_grad_error_bounds(mu_interval, mu_h, psi_list, K_N, M_N, mu_clusters);
+[eta_psi, eta_psi_cluster_sq, ~, eta_psi_info] = ...
+    calc_grad_error_bounds(mu_interval, mu_h, psi_list, K_N, M_N, mu_clusters);
 
 % -------------------------------------------------------------------------
 % Shape derivative matrices from the paper's first/second derivative
@@ -170,7 +171,16 @@ end
 
 % -------------------------------------------------------------------------
 % overline U_{i,M}^{p,h}: equation explicit-U-upper-def.
-% G is ||dotP grad phi_i||^2 and C_im uses J grad psi_m.
+% G is ||dotP grad phi_i||^2.  The paper writes the Neumann complement as a
+% mode-by-mode sum of |C_im|^2/mu_m.  In clustered eigenvalues the individual
+% eigenfunctions may rotate, so we certify the invariant cluster quantity
+%
+%   || P_{J grad E_K^N} (dotP grad phi_i) ||^2
+%     = sum_{m in K} |C_im|^2/mu_m,
+%
+% for every complete Neumann cluster K contained in {1,...,M}.  This is the
+% same term in U, but evaluated as a subspace projection instead of as
+% unstable individual coefficients.
 % -------------------------------------------------------------------------
 Ghat = gradient_image_norm_sq(uh_list(:,i), dotP, A_xx, A_xy, A_yy);
 eps_G = norm_dotP^2 * eta_phi(i) * (sqrt(lami) + sqrt(lamih));
@@ -187,11 +197,52 @@ for m = 1:M_neumann
     C_hat(m) = Chat;
     eps_C_list(m) = eps_C;
     Csq_lower_list(m) = Csq_lower;
+end
 
-    if I_inf(mu_interval(m)) <= 0
-        error('mu_%d is not provably positive.', m);
+num_mu_clusters = numel(mu_clusters);
+cluster_energy_lower = I_intval(zeros(num_mu_clusters, 1));
+cluster_proj_h_norm_lower = I_intval(zeros(num_mu_clusters, 1));
+cluster_proj_radius = I_intval(Inf(num_mu_clusters, 1));
+cluster_gram_norm_upper = I_intval(Inf(num_mu_clusters, 1));
+cluster_used = false(num_mu_clusters, 1);
+cluster_reason = repmat({''}, num_mu_clusters, 1);
+cluster_hat_coeff = cell(num_mu_clusters, 1);
+
+for c = 1:num_mu_clusters
+    idx_cluster = mu_clusters{c};
+    idx_cluster = idx_cluster(:).';
+
+    if idx_cluster(1) > M_neumann
+        cluster_reason{c} = 'Cluster starts after the requested Neumann cutoff M.';
+        continue;
     end
-    U_upper = U_upper - Csq_lower / mu_interval(m);
+    if idx_cluster(end) > M_neumann
+        cluster_reason{c} = 'Cluster intersects the cutoff M; skipped to avoid subtracting a partial eigenspace.';
+        continue;
+    end
+
+    if any(I_inf(mu_interval(idx_cluster)) <= 0)
+        error('A Neumann cluster used in U contains a non-positive eigenvalue lower bound.');
+    end
+
+    eta_cluster = sqrt(eta_psi_cluster_sq(c));
+    [Ek_lower, proj_h_norm_lower, proj_radius, gram_norm_upper, ok, reason, dhat] = ...
+        neumann_cluster_projection_energy_lower( ...
+            uh_list_full(:,i), psi_list(:,idx_cluster), dotP, ...
+            N_xx, N_yy, N_ux_vy, N_uy_vx, K_N, ...
+            mu_interval(idx_cluster), eta_phi(i), eta_cluster, lamih, norm_dotP);
+
+    cluster_energy_lower(c) = Ek_lower;
+    cluster_proj_h_norm_lower(c) = proj_h_norm_lower;
+    cluster_proj_radius(c) = proj_radius;
+    cluster_gram_norm_upper(c) = gram_norm_upper;
+    cluster_used(c) = ok;
+    cluster_reason{c} = reason;
+    cluster_hat_coeff{c} = dhat;
+
+    if ok
+        U_upper = U_upper - Ek_lower;
+    end
 end
 
 % -------------------------------------------------------------------------
@@ -231,11 +282,22 @@ diagnostics.Q_tail_upper = Q_tail_upper;
 diagnostics.tail_gap_upper = tail_gap_upper;
 diagnostics.eta_phi_i = eta_phi(i);
 diagnostics.eta_psi = eta_psi(1:M_neumann);
+diagnostics.eta_psi_cluster = sqrt(eta_psi_cluster_sq);
+diagnostics.eta_psi_cluster_sq = eta_psi_cluster_sq;
+diagnostics.eta_psi_info = eta_psi_info;
+diagnostics.mu_clusters = mu_clusters;
 diagnostics.mu_interval = mu_interval(1:M_neumann);
 diagnostics.mu_h = mu_h(1:M_neumann);
 diagnostics.C_hat = C_hat;
 diagnostics.eps_C = eps_C_list;
 diagnostics.Csq_lower = Csq_lower_list;
+diagnostics.cluster_energy_lower = cluster_energy_lower;
+diagnostics.cluster_proj_h_norm_lower = cluster_proj_h_norm_lower;
+diagnostics.cluster_proj_radius = cluster_proj_radius;
+diagnostics.cluster_gram_norm_upper = cluster_gram_norm_upper;
+diagnostics.cluster_used = cluster_used;
+diagnostics.cluster_reason = cluster_reason;
+diagnostics.cluster_hat_coeff = cluster_hat_coeff;
 
 end
 
@@ -264,6 +326,121 @@ val = phi_full' * ( ...
     -P(1,2)*A_yy ...
     +P(2,1)*A_xx ...
     +P(2,2)*A_uy_vx) * psi;
+end
+
+
+function [energy_lower, proj_h_norm_lower, proj_radius, gram_norm_upper, ok, reason, dhat] = ...
+    neumann_cluster_projection_energy_lower(phi_full, psi_block, P, ...
+    A_xx, A_yy, A_ux_vy, A_uy_vx, K_N, mu_block, eta_phi_i, eta_psi_cluster, lamih, norm_dotP)
+% Certified cluster contribution to the Neumann complement in U.
+%
+% Paper reference:
+%   U_{i,M} = G_i - sum_m |(dotP grad phi_i, J grad psi_m)|^2/mu_m.
+%
+% For a complete Neumann cluster K, the sum over K is the squared norm of
+% the projection of dotP grad phi_i onto
+%   J grad span{psi_m : m in K}
+% with the basis normalized by the gradient inner product.  This subspace
+% norm is invariant under rotations inside a multiple/near-multiple cluster.
+
+energy_lower = I_intval(0);
+proj_h_norm_lower = I_intval(0);
+proj_radius = I_intval(Inf);
+gram_norm_upper = I_intval(Inf);
+ok = false;
+reason = '';
+dhat = I_intval(zeros(size(psi_block, 2), 1));
+
+if isempty(psi_block)
+    reason = 'Empty Neumann cluster.';
+    return;
+end
+if isinf(eta_phi_i) || isinf(eta_psi_cluster)
+    reason = 'Cluster eigenspace estimator is infinite.';
+    return;
+end
+
+mu_lower = min(I_inf(mu_block));
+if ~(mu_lower > 0)
+    reason = 'Cluster Neumann eigenvalue is not provably positive.';
+    return;
+end
+
+[psi_grad_orth, orth_ok, orth_reason] = orthonormalize_wrt_midpoint_metric(psi_block, K_N);
+if ~orth_ok
+    reason = orth_reason;
+    return;
+end
+
+for q = 1:size(psi_grad_orth, 2)
+    dhat(q) = neumann_complement_coupling(phi_full, psi_grad_orth(:,q), P, ...
+        A_xx, A_yy, A_ux_vy, A_uy_vx);
+end
+
+% The columns are orthonormalized with the midpoint matrix.  The interval
+% Gram bound converts coefficient-vector norm into a certified projection
+% norm on the computed cluster subspace.
+gram = psi_grad_orth' * K_N * psi_grad_orth;
+gram = I_hull(gram, gram');
+gram_norm_upper = I_intval(I_sup(norm(gram, 2)));
+if ~(I_sup(gram_norm_upper) > 0) || isinf(I_sup(gram_norm_upper))
+    reason = 'Could not certify a finite gradient Gram norm for the cluster basis.';
+    return;
+end
+
+dhat_norm_lower = interval_vector_norm_lower(dhat);
+proj_h_norm_lower = dhat_norm_lower / sqrt(gram_norm_upper);
+
+% Projection error:
+%   ||P_K g - P_K^h g_h||
+%       <= ||g-g_h|| + gap(J grad E_K, J grad E_K^h) ||g_h||.
+% Here g=dotP grad phi_i.  The Liu--Vejchodsky eta is an absolute gradient
+% error for the scalar Neumann eigenspace; division by sqrt(mu_min) converts
+% it to a gap for the gradient-normalized J grad cluster.
+subspace_gap_upper = I_sup(eta_psi_cluster / sqrt(I_intval(mu_lower)));
+subspace_gap_upper = min(max(subspace_gap_upper, 0), 1);
+
+phi_error = norm_dotP * eta_phi_i;
+subspace_error = I_intval(subspace_gap_upper) * norm_dotP * sqrt(lamih);
+proj_radius = phi_error + subspace_error;
+
+lower_norm = max(I_inf(proj_h_norm_lower) - I_sup(proj_radius), 0);
+energy_lower = I_intval(lower_norm^2);
+ok = true;
+end
+
+
+function [Uo, ok, reason] = orthonormalize_wrt_midpoint_metric(U, M)
+% Build a stable basis using the midpoint Gram matrix; interval Gram bounds
+% are checked later before the basis is used for certification.
+ok = true;
+reason = '';
+
+Gint = U' * M * U;
+Gsym = (Gint + Gint') / 2;
+Gmid = mid(Gsym);
+
+[R, pflag] = chol(Gmid);
+if pflag ~= 0
+    ok = false;
+    reason = 'Midpoint gradient Gram matrix is not positive definite.';
+    Uo = U;
+    return;
+end
+
+Uo = U / R;
+end
+
+
+function nrm_lower = interval_vector_norm_lower(v)
+% Lower bound for ||v||_2 when each entry is an interval.
+s = 0;
+for q = 1:numel(v)
+    aq = abs(v(q));
+    lo = max(I_inf(aq), 0);
+    s = s + lo^2;
+end
+nrm_lower = I_intval(sqrt(s));
 end
 
 
