@@ -117,6 +117,7 @@ dlami = I_hull(dlamih - e_dlami, dlamih + e_dlami);
 Ahat_i = uh_list(:,i)' * shape_D2 * uh_list(:,i);
 eps_A = norm_ddotP * eta_phi(i) * (sqrt(lami) + sqrt(lamih));
 A_lower = Ahat_i - eps_A;
+A_upper = Ahat_i + eps_A;
 
 % -------------------------------------------------------------------------
 % B_ik, epsilon_B, underline/overline mathcal B: equations
@@ -137,6 +138,7 @@ end
 % bound is used.
 % -------------------------------------------------------------------------
 D_lower = A_lower;
+D_upper = A_upper;
 for k = 1:N_spectral
     if k == i
         continue;
@@ -147,8 +149,10 @@ for k = 1:N_spectral
 
     if k < i
         D_lower = D_lower - 2 * Bsq_lower(k) / den;
+        D_upper = D_upper - 2 * Bsq_upper(k) / den;
     else
         D_lower = D_lower - 2 * Bsq_upper(k) / den;
+        D_upper = D_upper - 2 * Bsq_lower(k) / den;
     end
 end
 
@@ -215,6 +219,10 @@ diagnostics.M_neumann = M_neumann;
 diagnostics.lami = lami;
 diagnostics.dlami = dlami;
 diagnostics.D_lower = D_lower;
+diagnostics.D_upper = D_upper;
+diagnostics.ddlam_lower = ddlam_i_lower_bound;
+diagnostics.ddlam_upper = I_intval(I_sup(D_upper));
+diagnostics.ddlam_width = I_sup(D_upper) - I_inf(ddlam_i_lower_bound);
 diagnostics.S_lower = S_lower;
 diagnostics.U_upper = U_upper;
 diagnostics.Ghat = Ghat;
