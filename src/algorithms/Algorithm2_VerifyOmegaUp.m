@@ -107,11 +107,10 @@ function report = certify_sign_d2Jdx2_over_OmegaUp(conjecture_type, eps_rect, Nx
 x0    = I_intval('0.5');
 y_top = sqrt(I_intval('3'))/2;
 
-x_nodes = x0    + 2*eps_rect*(0:Nx)/Nx;   % length Nx+1, spans [1/2, 1/2+2*eps]
-y_nodes = y_top - eps_rect*(0:Ny)/Ny;     % length Ny+1, descending in [sqrt(3)/2-eps, sqrt(3)/2]
+[x_nodes, y_nodes, Nx_eff, Ny_eff] = omega_up_rect_grid(x0, y_top, eps_rect, Nx, Ny, mesh_params);
 
-L  = I_zeros(Ny, Nx);                   % L(j,i) = lower bound on cell (i,j)
-ok = true(Ny, Nx);
+L  = I_zeros(Ny_eff, Nx_eff);           % L(j,i) = lower bound on cell (i,j)
+ok = true(Ny_eff, Nx_eff);
 
 failures = {};                          % kept for compatibility
 
@@ -141,8 +140,8 @@ end
 
 min_so_far = +Inf;
 
-for i = 1:Nx
-    for j = 1:Ny
+for i = 1:Nx_eff
+    for j = 1:Ny_eff
         % Cell R_ij: x in [x_i, x_{i+1}], y in [y_{j+1}, y_j]
         fprintf('cell verification:[i,j]=[%d,%d]\n', i,j);
         x_lo = x_nodes(i);
@@ -192,8 +191,10 @@ end
 
 report = struct();
 report.algorithm      = 'certify-d2Jdx2';
-report.Nx             = Nx;
-report.Ny             = Ny;
+report.Nx             = Nx_eff;
+report.Ny             = Ny_eff;
+report.Nx_requested   = Nx;
+report.Ny_requested   = Ny;
 report.eps_rect       = eps_rect;
 report.L              = L;
 report.ok             = ok;
@@ -204,6 +205,37 @@ report.failures       = failures;
 % =============================================================
 % local helpers
 % =============================================================
+function [x_nodes_out, y_nodes_out, nx_out, ny_out] = omega_up_rect_grid(x_left, y_top_in, eps_in, nx_in, ny_in, params)
+    % The uniform paper grid is the default.  For the Neumann/eigenspace
+    % estimator, however, the affine eigenvalue perturbation over a cell can
+    % dominate the FEM eigenvalue enclosure.  Optional max-step fields let us
+    % refine the Omega_up cells without changing the public Algorithm2 API.
+    x_span = 2*eps_in;
+    y_span = eps_in;
+
+    nx_out = nx_in;
+    ny_out = ny_in;
+
+    if isstruct(params) && isfield(params, 'omega_up_dx_max') && ~isempty(params.omega_up_dx_max)
+        dx_max = I_intval(params.omega_up_dx_max);
+        nx_out = max(nx_out, ceil(I_sup(x_span / dx_max)));
+    end
+    if isstruct(params) && isfield(params, 'omega_up_dy_max') && ~isempty(params.omega_up_dy_max)
+        dy_max = I_intval(params.omega_up_dy_max);
+        ny_out = max(ny_out, ceil(I_sup(y_span / dy_max)));
+    end
+
+    x_nodes_out = x_left + x_span*(0:nx_out)/nx_out;
+    y_nodes_out = y_top_in - y_span*(0:ny_out)/ny_out;
+
+    if nx_out ~= nx_in || ny_out ~= ny_in
+        fprintf('  refined Omega_up rect grid: Nx %d -> %d, Ny %d -> %d\n', ...
+            nx_in, nx_out, ny_in, ny_out);
+        fprintf('  max cell sizes: dx <= %.6g, dy <= %.6g\n', ...
+            I_sup(x_span/nx_out), I_sup(y_span/ny_out));
+    end
+end
+
 function v = scalarInf(x)
     if isa(x,'intval'), v = I_inf(x); else, v = double(x); end
 end

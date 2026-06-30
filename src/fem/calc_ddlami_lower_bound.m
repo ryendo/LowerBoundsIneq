@@ -17,11 +17,14 @@ function [lami, dlami, ddlam_i_lower_bound, diagnostics] = calc_ddlami_lower_bou
 % see equations defining D, S, U and Theorem main-theorem-est in the paper.
 
 if nargin < 9 || isempty(M_neumann)
-    M_neumann = N_spectral;
+    M_neumann = max(N_spectral, 2);
 end
 
 if i > N_spectral
     error('The paper bound requires i <= N_spectral.');
+end
+if i ~= 1
+    error('The eigenspace-based paper estimator is implemented for lambda_1.');
 end
 if M_neumann < 1
     error('M_neumann must be at least 1.');
@@ -43,22 +46,28 @@ for k = 1:num_dirichlet_needed
     lams_h_raw(k) = (uh_list(:,k)' * K_D * uh_list(:,k)) / (uh_list(:,k)' * M_D * uh_list(:,k));
 end
 
-x_base   = base_triangle(5);
-y_base   = base_triangle(6);
-x_target = triangle(5);
-y_target = triangle(6);
+x_base   = I_intval(base_triangle(5));
+y_base   = I_intval(base_triangle(6));
+x_target = I_intval(triangle(5));
+y_target = I_intval(triangle(6));
 
 % Eigenvalue perturbation over the target cell, used exactly as in the
 % paper's uniform cell algorithms for Omega_up.
 S_inv     = [1, (x_base - x_target) / y_target; 0, y_base / y_target];
-SinvSinvt = S_inv * S_inv';
-scale_interval = norm(SinvSinvt);
+[eig_factor_lower, eig_factor_upper] = affine_metric_eigenvalue_factors(S_inv);
 
-lams_interval = lams_raw   * scale_interval;
-lams_h        = lams_h_raw * scale_interval;
+lams_interval = scale_positive_eigen_bounds(lams_raw, eig_factor_lower, eig_factor_upper);
+lams_h        = scale_positive_eigen_bounds(lams_h_raw, eig_factor_lower, eig_factor_upper);
 
-clusters = auto_cluster_eigenvalues(lams_interval, 0.01);
-eta_phi = calc_grad_error_bounds(lams_interval, lams_h, uh_list, K_D, M_D, clusters);
+dirichlet_clusters = auto_cluster_eigenvalues(lams_interval, 0.01);
+[eta_phi_subspace, eta_phi_cluster_sq, eta_phi_cluster_b_sq, eta_phi_info] = ...
+    calc_grad_error_bounds(lams_interval, lams_h, uh_list, K_D, M_D, dirichlet_clusters);
+dirichlet_cluster_ids = complete_cluster_ids(dirichlet_clusters, N_spectral, 'Dirichlet');
+if ~isequal(dirichlet_clusters{dirichlet_cluster_ids(1)}, 1)
+    error('The eigenspace estimator requires lambda_1 to be an isolated first cluster.');
+end
+eta_phi_1 = individual_est_a_from_singleton( ...
+    lams_interval(1), lams_h(1), eta_phi_cluster_b_sq(dirichlet_cluster_ids(1)));
 
 % -------------------------------------------------------------------------
 % Neumann FEM data: positive modes mu_1,...,mu_M plus one extra mode for the
@@ -76,10 +85,10 @@ end
 % under the same affine cell map; see the paper's eigenvalue perturbation
 % lemma for either boundary condition.  The Neumann eigenspace errors used in
 % epsilon_C are therefore computed from the scaled cell enclosures.
-mu_interval = mu_raw * scale_interval;
-mu_h = mu_h_raw * scale_interval;
+mu_interval = scale_positive_eigen_bounds(mu_raw, eig_factor_lower, eig_factor_upper);
+mu_h = scale_positive_eigen_bounds(mu_h_raw, eig_factor_lower, eig_factor_upper);
 mu_clusters = auto_cluster_eigenvalues(mu_interval, 0.01);
-[eta_psi, eta_psi_cluster_sq, ~, eta_psi_info] = ...
+[eta_psi, eta_psi_cluster_sq, eta_psi_cluster_b_sq, eta_psi_info] = ...
     calc_grad_error_bounds(mu_interval, mu_h, psi_list, K_N, M_N, mu_clusters);
 
 % -------------------------------------------------------------------------
@@ -109,140 +118,133 @@ lamih = lams_h(i);
 % derivative".
 % -------------------------------------------------------------------------
 dlamih = uh_list(:,i)' * shape_D * uh_list(:,i);
-e_dlami = norm_dotP * (sqrt(lami) + sqrt(lamih)) * eta_phi(i);
+e_dlami = norm_dotP * (sqrt(lami) + sqrt(lamih)) * eta_phi_1;
 dlami = I_hull(dlamih - e_dlami, dlamih + e_dlami);
 
 % -------------------------------------------------------------------------
 % A_i and epsilon_A: equations explicit-eps-A and explicit-A-bounds.
 % -------------------------------------------------------------------------
 Ahat_i = uh_list(:,i)' * shape_D2 * uh_list(:,i);
-eps_A = norm_ddotP * eta_phi(i) * (sqrt(lami) + sqrt(lamih));
+eps_A = norm_ddotP * eta_phi_1 * (sqrt(lami) + sqrt(lamih));
 A_lower = Ahat_i - eps_A;
 A_upper = Ahat_i + eps_A;
 
 % -------------------------------------------------------------------------
-% B_ik, epsilon_B, underline/overline mathcal B: equations
-% explicit-eps-B and explicit-Bsq-bounds.
-% -------------------------------------------------------------------------
-Bhat = I_intval(zeros(N_spectral, 1));
-Bsq_lower = I_intval(zeros(N_spectral, 1));
-Bsq_upper = I_intval(zeros(N_spectral, 1));
-for k = 1:N_spectral
-    Bhat(k) = uh_list(:,i)' * shape_D * uh_list(:,k);
-    eps_B = norm_dotP * (eta_phi(i) * sqrt(lams_interval(k)) + sqrt(lamih) * eta_phi(k));
-    [Bsq_lower(k), Bsq_upper(k)] = squared_abs_bounds(Bhat(k), eps_B);
-end
-
-% -------------------------------------------------------------------------
-% underline D_{i,N}^{p,h}: equation explicit-D-lower-def.
-% The sign of lambda_k-lambda_i determines whether the lower or upper square
-% bound is used.
-% -------------------------------------------------------------------------
-D_lower = A_lower;
-D_upper = A_upper;
-for k = 1:N_spectral
-    if k == i
-        continue;
-    end
-
-    den = lams_interval(k) - lams_interval(i);
-    assert_separated(den, sprintf('lambda_%d - lambda_%d', k, i));
-
-    if k < i
-        D_lower = D_lower - 2 * Bsq_lower(k) / den;
-        D_upper = D_upper - 2 * Bsq_upper(k) / den;
-    else
-        D_lower = D_lower - 2 * Bsq_upper(k) / den;
-        D_upper = D_upper - 2 * Bsq_lower(k) / den;
-    end
-end
-
-% -------------------------------------------------------------------------
-% underline S_{i,N}^{p,h}: equation explicit-S-lower-def.  Unlike D, this
-% sum includes k=i; for N=1 this is the first-derivative contribution.
-% -------------------------------------------------------------------------
-S_lower = I_intval(0);
-for k = 1:N_spectral
-    if I_inf(lams_interval(k)) <= 0
-        error('lambda_%d is not provably positive.', k);
-    end
-    S_lower = S_lower + Bsq_lower(k) / lams_interval(k);
-end
-
-% -------------------------------------------------------------------------
-% overline U_{i,M}^{p,h}: equation explicit-U-upper-def.
-% G is ||dotP grad phi_i||^2.  The paper writes the Neumann complement as a
-% mode-by-mode sum of |C_im|^2/mu_m.  In clustered eigenvalues the individual
-% eigenfunctions may rotate, so we certify the invariant cluster quantity
+% Eigenspace-based Dirichlet quantities in the revised paper:
+%   equations D-lower-eigenspace, D-upper-eigenspace, and
+%   S-lower-eigenspace.
 %
-%   || P_{J grad E_K^N} (dotP grad phi_i) ||^2
-%     = sum_{m in K} |C_im|^2/mu_m,
-%
-% for every complete Neumann cluster K contained in {1,...,M}.  This is the
-% same term in U, but evaluated as a subspace projection instead of as
-% unstable individual coefficients.
+% Each complete consecutive Dirichlet range E_k is evaluated through the
+% basis-invariant projection norm
+%   || P_{grad E_k^h}(dotP grad phihat_1) ||.
+% This avoids labeling eigenfunctions inside a multiple/clustered range.
 % -------------------------------------------------------------------------
+eta_G = norm_dotP * eta_phi_1;
 Ghat = gradient_image_norm_sq(uh_list(:,i), dotP, A_xx, A_xy, A_yy);
-eps_G = norm_dotP^2 * eta_phi(i) * (sqrt(lami) + sqrt(lamih));
+eps_G = norm_dotP^2 * eta_phi_1 * (sqrt(lami) + sqrt(lamih));
 G_upper = Ghat + eps_G;
 
-U_upper = G_upper;
-C_hat = I_intval(zeros(M_neumann, 1));
-eps_C_list = I_intval(zeros(M_neumann, 1));
-Csq_lower_list = I_intval(zeros(M_neumann, 1));
-for m = 1:M_neumann
-    Chat = neumann_complement_coupling(uh_list_full(:,i), psi_list(:,m), dotP, N_xx, N_yy, N_ux_vy, N_uy_vx);
-    eps_C = norm_dotP * (eta_phi(i) * sqrt(mu_interval(m)) + sqrt(lamih) * eta_psi(m));
-    [Csq_lower, ~] = squared_abs_bounds(Chat, eps_C);
-    C_hat(m) = Chat;
-    eps_C_list(m) = eps_C;
-    Csq_lower_list(m) = Csq_lower;
-end
+D_lower = A_lower;
+D_upper = A_upper;
+S_lower = I_intval(0);
 
-num_mu_clusters = numel(mu_clusters);
-cluster_energy_lower = I_intval(zeros(num_mu_clusters, 1));
-cluster_proj_h_norm_lower = I_intval(zeros(num_mu_clusters, 1));
-cluster_proj_radius = I_intval(Inf(num_mu_clusters, 1));
-cluster_gram_norm_upper = I_intval(Inf(num_mu_clusters, 1));
-cluster_used = false(num_mu_clusters, 1);
-cluster_reason = repmat({''}, num_mu_clusters, 1);
-cluster_hat_coeff = cell(num_mu_clusters, 1);
+num_dirichlet_blocks = numel(dirichlet_cluster_ids);
+dir_proj_lower = I_intval(zeros(num_dirichlet_blocks, 1));
+dir_proj_upper = I_intval(zeros(num_dirichlet_blocks, 1));
+dir_proj_radius = I_intval(zeros(num_dirichlet_blocks, 1));
+dir_proj_energy_lower = I_intval(zeros(num_dirichlet_blocks, 1));
+dir_proj_energy_upper = I_intval(zeros(num_dirichlet_blocks, 1));
+dir_proj_coeff = cell(num_dirichlet_blocks, 1);
 
-for c = 1:num_mu_clusters
-    idx_cluster = mu_clusters{c};
+for q = 1:num_dirichlet_blocks
+    cluster_id = dirichlet_cluster_ids(q);
+    idx_cluster = dirichlet_clusters{cluster_id};
     idx_cluster = idx_cluster(:).';
 
-    if idx_cluster(1) > M_neumann
-        cluster_reason{c} = 'Cluster starts after the requested Neumann cutoff M.';
+    [proj_lower, proj_upper, coeff] = projection_norm_bounds( ...
+        uh_list(:,i), uh_list(:,idx_cluster), shape_D, K_D);
+
+    radius = sqrt(eta_phi_cluster_sq(cluster_id)) * sqrt(G_upper) + eta_G;
+    energy_lower = squared_positive_part_lower(proj_lower, radius);
+    energy_upper = squared_sum_upper(proj_upper, radius);
+
+    dir_proj_lower(q) = proj_lower;
+    dir_proj_upper(q) = proj_upper;
+    dir_proj_radius(q) = radius;
+    dir_proj_energy_lower(q) = energy_lower;
+    dir_proj_energy_upper(q) = energy_upper;
+    dir_proj_coeff{q} = coeff;
+
+    S_lower = S_lower + energy_lower;
+
+    if isequal(idx_cluster, 1)
         continue;
     end
-    if idx_cluster(end) > M_neumann
-        cluster_reason{c} = 'Cluster intersects the cutoff M; skipped to avoid subtracting a partial eigenspace.';
-        continue;
+
+    lam_n_lower = I_inf(lams_interval(idx_cluster(1)));
+    lam_N_upper = I_sup(lams_interval(idx_cluster(end)));
+    lam_1_lower = I_inf(lams_interval(1));
+    lam_1_upper = I_sup(lams_interval(1));
+
+    if ~(lam_n_lower > lam_1_upper)
+        error('Cannot certify lambda_%d > lambda_1 for a Dirichlet cluster factor.', idx_cluster(1));
     end
+    if ~(lam_N_upper > lam_1_lower)
+        error('Cannot certify a positive Dirichlet cluster denominator.');
+    end
+
+    factor_upper = I_intval(lam_n_lower / (lam_n_lower - lam_1_upper));
+    factor_lower = I_intval(lam_N_upper / (lam_N_upper - lam_1_lower));
+    D_lower = D_lower - 2 * factor_upper * energy_upper;
+    D_upper = D_upper - 2 * factor_lower * energy_lower;
+end
+
+% -------------------------------------------------------------------------
+% Eigenspace-based Neumann complement: equation U-upper-eigenspace.
+%
+%   || P_{J grad E_K^N} (dotP grad phi_i) ||^2
+%     = sum_{m in K} |C_im|^2/mu_m.
+%
+% The revised paper evaluates this projection norm directly for each complete
+% Neumann range F_l; no individual Neumann eigenfunction labels are used.
+% -------------------------------------------------------------------------
+U_upper = G_upper;
+C_hat = I_intval(zeros(M_neumann, 1));
+neumann_coupling = neumann_complement_matrix(dotP, N_xx, N_yy, N_ux_vy, N_uy_vx);
+for m = 1:M_neumann
+    C_hat(m) = uh_list_full(:,i)' * neumann_coupling * psi_list(:,m);
+end
+
+neumann_cluster_ids = complete_cluster_ids(mu_clusters, M_neumann, 'Neumann');
+num_neumann_blocks = numel(neumann_cluster_ids);
+neu_proj_lower = I_intval(zeros(num_neumann_blocks, 1));
+neu_proj_upper = I_intval(zeros(num_neumann_blocks, 1));
+neu_proj_radius = I_intval(zeros(num_neumann_blocks, 1));
+neu_proj_energy_lower = I_intval(zeros(num_neumann_blocks, 1));
+neu_proj_coeff = cell(num_neumann_blocks, 1);
+
+for q = 1:num_neumann_blocks
+    cluster_id = neumann_cluster_ids(q);
+    idx_cluster = mu_clusters{cluster_id};
+    idx_cluster = idx_cluster(:).';
 
     if any(I_inf(mu_interval(idx_cluster)) <= 0)
         error('A Neumann cluster used in U contains a non-positive eigenvalue lower bound.');
     end
 
-    eta_cluster = sqrt(eta_psi_cluster_sq(c));
-    [Ek_lower, proj_h_norm_lower, proj_radius, gram_norm_upper, ok, reason, dhat] = ...
-        neumann_cluster_projection_energy_lower( ...
-            uh_list_full(:,i), psi_list(:,idx_cluster), dotP, ...
-            N_xx, N_yy, N_ux_vy, N_uy_vx, K_N, ...
-            mu_interval(idx_cluster), eta_phi(i), eta_cluster, lamih, norm_dotP);
+    [proj_lower, proj_upper, coeff] = projection_norm_bounds( ...
+        uh_list_full(:,i), psi_list(:,idx_cluster), neumann_coupling, K_N);
 
-    cluster_energy_lower(c) = Ek_lower;
-    cluster_proj_h_norm_lower(c) = proj_h_norm_lower;
-    cluster_proj_radius(c) = proj_radius;
-    cluster_gram_norm_upper(c) = gram_norm_upper;
-    cluster_used(c) = ok;
-    cluster_reason{c} = reason;
-    cluster_hat_coeff{c} = dhat;
+    radius = sqrt(eta_psi_cluster_sq(cluster_id)) * sqrt(G_upper) + eta_G;
+    energy_lower = squared_positive_part_lower(proj_lower, radius);
 
-    if ok
-        U_upper = U_upper - Ek_lower;
-    end
+    neu_proj_lower(q) = proj_lower;
+    neu_proj_upper(q) = proj_upper;
+    neu_proj_radius(q) = radius;
+    neu_proj_energy_lower(q) = energy_lower;
+    neu_proj_coeff{q} = coeff;
+
+    U_upper = U_upper - energy_lower;
 end
 
 % -------------------------------------------------------------------------
@@ -269,6 +271,8 @@ diagnostics.N_spectral = N_spectral;
 diagnostics.M_neumann = M_neumann;
 diagnostics.lami = lami;
 diagnostics.dlami = dlami;
+diagnostics.eig_factor_lower = eig_factor_lower;
+diagnostics.eig_factor_upper = eig_factor_upper;
 diagnostics.D_lower = D_lower;
 diagnostics.D_upper = D_upper;
 diagnostics.ddlam_lower = ddlam_i_lower_bound;
@@ -280,24 +284,36 @@ diagnostics.Ghat = Ghat;
 diagnostics.G_upper = G_upper;
 diagnostics.Q_tail_upper = Q_tail_upper;
 diagnostics.tail_gap_upper = tail_gap_upper;
-diagnostics.eta_phi_i = eta_phi(i);
-diagnostics.eta_psi = eta_psi(1:M_neumann);
+diagnostics.eta_phi_i = eta_phi_1;
+diagnostics.eta_phi_1 = eta_phi_1;
+diagnostics.eta_phi_subspace = eta_phi_subspace(1:max(N_spectral, 1));
+diagnostics.eta_phi_cluster = sqrt(eta_phi_cluster_sq);
+diagnostics.eta_phi_info = eta_phi_info;
+diagnostics.dirichlet_clusters = dirichlet_clusters;
+diagnostics.dirichlet_cluster_ids = dirichlet_cluster_ids;
+diagnostics.eta_G = eta_G;
+diagnostics.dir_proj_lower = dir_proj_lower;
+diagnostics.dir_proj_upper = dir_proj_upper;
+diagnostics.dir_proj_radius = dir_proj_radius;
+diagnostics.dir_proj_energy_lower = dir_proj_energy_lower;
+diagnostics.dir_proj_energy_upper = dir_proj_energy_upper;
+diagnostics.dir_proj_coeff = dir_proj_coeff;
+diagnostics.eta_psi = sqrt(eta_psi_cluster_sq);
 diagnostics.eta_psi_cluster = sqrt(eta_psi_cluster_sq);
 diagnostics.eta_psi_cluster_sq = eta_psi_cluster_sq;
+diagnostics.eta_psi_cluster_b = sqrt(eta_psi_cluster_b_sq);
+diagnostics.eta_psi_cluster_b_sq = eta_psi_cluster_b_sq;
 diagnostics.eta_psi_info = eta_psi_info;
 diagnostics.mu_clusters = mu_clusters;
+diagnostics.neumann_cluster_ids = neumann_cluster_ids;
 diagnostics.mu_interval = mu_interval(1:M_neumann);
 diagnostics.mu_h = mu_h(1:M_neumann);
 diagnostics.C_hat = C_hat;
-diagnostics.eps_C = eps_C_list;
-diagnostics.Csq_lower = Csq_lower_list;
-diagnostics.cluster_energy_lower = cluster_energy_lower;
-diagnostics.cluster_proj_h_norm_lower = cluster_proj_h_norm_lower;
-diagnostics.cluster_proj_radius = cluster_proj_radius;
-diagnostics.cluster_gram_norm_upper = cluster_gram_norm_upper;
-diagnostics.cluster_used = cluster_used;
-diagnostics.cluster_reason = cluster_reason;
-diagnostics.cluster_hat_coeff = cluster_hat_coeff;
+diagnostics.neu_proj_lower = neu_proj_lower;
+diagnostics.neu_proj_upper = neu_proj_upper;
+diagnostics.neu_proj_radius = neu_proj_radius;
+diagnostics.neu_proj_energy_lower = neu_proj_energy_lower;
+diagnostics.neu_proj_coeff = neu_proj_coeff;
 
 end
 
@@ -317,6 +333,66 @@ val = u' * (c_xx*A_xx + 2*c_xy*A_xy + c_yy*A_yy) * u;
 end
 
 
+function [factor_lower, factor_upper] = affine_metric_eigenvalue_factors(S_inv)
+% Eigenvalue perturbation factors for the affine cell map.
+%
+% Lemma eig-perturbation-first gives
+%   lambda_min(S^{-1}S^{-T}) * nu(base)
+%     <= nu(target)
+%     <= lambda_max(S^{-1}S^{-T}) * nu(base).
+% The lower and upper factors must be kept separate; using only the spectral
+% norm makes the cell enclosure look artificially narrow and can corrupt the
+% Liu--Vejchodsky eigenspace error estimates.
+%
+% In our cell algorithms S_inv has the triangular form [1,a;0,b], with
+% a containing 0 and b > 0.  Direct interval eig formulas suffer severe
+% dependency overestimation, so evaluate the scalar 2x2 eigenvalue formula at
+% the endpoint candidates for |a| and b.
+aI = S_inv(1,2);
+bI = S_inv(2,2);
+
+alpha_max = max(abs(I_inf(aI)), abs(I_sup(aI)));
+beta_min = min(abs(I_inf(bI)), abs(I_sup(bI)));
+beta_max = max(abs(I_inf(bI)), abs(I_sup(bI)));
+
+lambda_min_candidates = [];
+lambda_max_candidates = [];
+for alpha = [0, alpha_max]
+    for beta = [beta_min, beta_max]
+        [emin, emax] = triangular_metric_eigs(alpha, beta);
+        lambda_min_candidates(end+1) = emin; %#ok<AGROW>
+        lambda_max_candidates(end+1) = emax; %#ok<AGROW>
+    end
+end
+
+factor_lower = I_intval(max(min(lambda_min_candidates), 0));
+factor_upper = I_intval(max(lambda_max_candidates));
+end
+
+
+function [emin, emax] = triangular_metric_eigs(alpha, beta)
+% Eigenvalues of [1,alpha;0,beta] * [1,alpha;0,beta]^T.
+a11 = 1 + alpha^2;
+a12 = alpha * beta;
+a22 = beta^2;
+trA = a11 + a22;
+detA = a11*a22 - a12*a12;
+disc = max(trA*trA - 4*detA, 0);
+emin = (trA - sqrt(disc)) / 2;
+emax = (trA + sqrt(disc)) / 2;
+end
+
+
+function scaled = scale_positive_eigen_bounds(bounds, factor_lower, factor_upper)
+% Scale positive eigenvalue enclosures by affine perturbation factors.
+scaled = I_intval(zeros(size(bounds)));
+for k = 1:length(bounds)
+    scaled(k) = I_hull(I_inf(factor_lower * bounds(k)), ...
+                       I_sup(factor_upper * bounds(k)));
+end
+end
+
+
 function val = neumann_complement_coupling(phi_full, psi, P, A_xx, A_yy, A_ux_vy, A_uy_vx)
 % Discrete Chat = (P grad phi, J grad psi), equation C-Chat-fem.
 % With J grad psi = (-psi_y, psi_x):
@@ -326,6 +402,103 @@ val = phi_full' * ( ...
     -P(1,2)*A_yy ...
     +P(2,1)*A_xx ...
     +P(2,2)*A_uy_vx) * psi;
+end
+
+
+function C = neumann_complement_matrix(P, A_xx, A_yy, A_ux_vy, A_uy_vx)
+% Matrix for (P grad phi, J grad psi), used in U-upper-eigenspace.
+C = -P(1,1)*A_ux_vy ...
+    -P(1,2)*A_yy ...
+    +P(2,1)*A_xx ...
+    +P(2,2)*A_uy_vx;
+end
+
+
+function cluster_ids = complete_cluster_ids(clusters, cutoff, label)
+% Return all cluster ids contained in 1:cutoff; reject partial clusters.
+cluster_ids = [];
+for c = 1:numel(clusters)
+    idx = clusters{c};
+    idx = idx(:).';
+    if idx(1) > cutoff
+        break;
+    end
+    if idx(end) > cutoff
+        error('%s cutoff %d cuts the certified cluster [%d,%d].', ...
+            label, cutoff, idx(1), idx(end));
+    end
+    cluster_ids(end+1) = c; %#ok<AGROW>
+end
+
+if isempty(cluster_ids)
+    error('%s cutoff %d does not contain any complete cluster.', label, cutoff);
+end
+
+last_idx = clusters{cluster_ids(end)};
+if last_idx(end) ~= cutoff
+    error('%s clusters do not cover exactly 1:%d.', label, cutoff);
+end
+end
+
+
+function eta = individual_est_a_from_singleton(lam, lam_h, delta_b_sq)
+% Lemma bbar-b-relation for a one-dimensional isolated eigenspace.
+db2 = I_sup(delta_b_sq);
+if isinf(db2)
+    db2 = 1;
+end
+db2 = min(max(db2, 0), 1);
+root_factor = sqrt(max(1 - db2, 0));
+eta_sq_upper = I_sup(lam) + I_sup(lam_h) - 2 * I_inf(lam) * root_factor;
+eta = I_intval(sqrt(max(eta_sq_upper, 0)));
+end
+
+
+function [proj_lower, proj_upper, coeff] = projection_norm_bounds(reference, basis, coupling_matrix, metric_matrix)
+% Certified bounds for sqrt(b^T K^{-1} b) in the revised eigenspace theorem.
+%
+% The columns are first orthonormalized using the midpoint Gram matrix.  The
+% interval Gram error then gives spectral bounds for K and converts the
+% coefficient vector norm into lower and upper projection-norm bounds.
+[basis_orth, ok, reason] = orthonormalize_wrt_midpoint_metric(basis, metric_matrix);
+if ~ok
+    error('Cannot orthonormalize cluster basis: %s', reason);
+end
+
+coeff = I_intval(zeros(size(basis_orth, 2), 1));
+for q = 1:size(basis_orth, 2)
+    coeff(q) = reference' * coupling_matrix * basis_orth(:,q);
+end
+
+[coeff_norm_lower, coeff_norm_upper] = interval_vector_norm_bounds(coeff);
+
+gram = basis_orth' * metric_matrix * basis_orth;
+gram = I_hull(gram, gram');
+dim = size(gram, 1);
+gram_error = I_sup(norm(I_intval(eye(dim)) - gram, 2));
+if ~(gram_error < 1)
+    error('Cannot certify positive definiteness of the cluster Gram matrix.');
+end
+
+lambda_min_lower = 1 - gram_error;
+lambda_max_upper = 1 + gram_error;
+
+proj_lower = I_intval(coeff_norm_lower / sqrt(lambda_max_upper));
+proj_upper = I_intval(coeff_norm_upper / sqrt(lambda_min_lower));
+end
+
+
+function val = squared_positive_part_lower(norm_lower, radius)
+% Lower bound for (max{norm - radius, 0})^2.
+lo = max(I_inf(norm_lower) - I_sup(radius), 0);
+val = I_intval(lo^2);
+end
+
+
+function val = squared_sum_upper(norm_upper, radius)
+% Upper bound for (norm + radius)^2.
+hi = I_sup(norm_upper) + I_sup(radius);
+val = I_intval(hi^2);
 end
 
 
@@ -434,13 +607,23 @@ end
 
 function nrm_lower = interval_vector_norm_lower(v)
 % Lower bound for ||v||_2 when each entry is an interval.
-s = 0;
-for q = 1:numel(v)
+[nrm_lower, ~] = interval_vector_norm_bounds(v);
+end
+
+
+function [nrm_lower, nrm_upper] = interval_vector_norm_bounds(v)
+% Lower and upper bounds for ||v||_2 when each entry is an interval.
+s_lower = 0;
+s_upper = 0;
+for q = 1:length(v)
     aq = abs(v(q));
     lo = max(I_inf(aq), 0);
-    s = s + lo^2;
+    hi = max(I_sup(aq), 0);
+    s_lower = s_lower + lo^2;
+    s_upper = s_upper + hi^2;
 end
-nrm_lower = I_intval(sqrt(s));
+nrm_lower = sqrt(s_lower);
+nrm_upper = sqrt(s_upper);
 end
 
 
