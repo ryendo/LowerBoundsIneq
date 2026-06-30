@@ -1,6 +1,10 @@
-function [mat_b_w_w] = RT_Hdiv_problem_dirichlet(mesh, RT_order, f)
+function [mat_b_w_w] = RT_Hdiv_problem_dirichlet(mesh, RT_order, f, boundary_mode)
     % dim of f: ne * (RT_order+1)
     global INTERVAL_MODE
+    if nargin < 4 || isempty(boundary_mode)
+        boundary_mode = 'free';
+    end
+    boundary_mode = char(boundary_mode);
 
     vert = I_intval(mesh.nodes);
     edge = mesh.edges;
@@ -15,6 +19,15 @@ function [mat_b_w_w] = RT_Hdiv_problem_dirichlet(mesh, RT_order, f)
     end
     % A = RT_Hdiv_stiff_matrix(RT_order, vert, edge, tri, tri2edge);
     [A,B] = RT_mixed_matrix(RT_order, vert, edge, tri,tri2edge);
+    if strcmpi(boundary_mode, 'zero_normal')
+        bd_dofs = RT_boundary_normal_dofs(RT_order, edge, mesh.boundary_edges);
+        free_dofs = true(size(A, 1), 1);
+        free_dofs(bd_dofs) = false;
+        A = A(free_dofs, free_dofs);
+        B = B(free_dofs, :);
+    elseif ~strcmpi(boundary_mode, 'free')
+        error('Unknown RT_Hdiv boundary_mode: %s', boundary_mode);
+    end
     
     if nt > 1000
         disp('deal with boundary condition...');
@@ -28,6 +41,11 @@ function [mat_b_w_w] = RT_Hdiv_problem_dirichlet(mesh, RT_order, f)
             disp('solve RT fem system...');
         end
         H = B'*(I_solve(A,B));
+        if strcmpi(boundary_mode, 'zero_normal')
+            Z = dg_mean_zero_basis(RT_order, vert, tri);
+            H = Z' * H * Z;
+            F = Z' * F;
+        end
         Y = I_solve(H,-F);
         mat_b_w_w = Y'*(-F);
 
@@ -35,6 +53,12 @@ function [mat_b_w_w] = RT_Hdiv_problem_dirichlet(mesh, RT_order, f)
     %% Stardard way to calculate mat_b_w_w (w: Goerisch w term)
         m = size(B,2);
         n = size(A,1);
+        if strcmpi(boundary_mode, 'zero_normal')
+            Z = dg_mean_zero_basis(RT_order, vert, tri);
+            B = B * Z;
+            F = Z' * F;
+            m = size(B,2);
+        end
         mat_mixed = sparse([A,B;B', I_zeros(m,m)]);
         f_mixed = I_zeros(size(mat_mixed,1), size(f,2));
         f_mixed(n+1:end,:) = - F;
@@ -49,6 +73,54 @@ function [mat_b_w_w] = RT_Hdiv_problem_dirichlet(mesh, RT_order, f)
 
     end
 
+end
+
+function bd_dofs = RT_boundary_normal_dofs(RT_order, edge, bd_edge)
+isBnd = ismember(edge, bd_edge, 'rows');
+bdEdgeIds = find(isBnd > 0);
+bd_dofs = [];
+for k = 1:numel(bdEdgeIds)
+    eidx = bdEdgeIds(k);
+    bd_dofs = [bd_dofs, (RT_order+1)*(eidx-1)+1:(RT_order+1)*eidx]; %#ok<AGROW>
+end
+bd_dofs = unique(bd_dofs);
+end
+
+function Z = dg_mean_zero_basis(order, vert, tri)
+% Basis for the discontinuous scalar test space modulo constants.  In the
+% Neumann Lehmann--Goerisch H(div) problem, zero normal flux makes div X a
+% mean-zero space, so the Lagrange multiplier space must drop the constant
+% component.
+dof_dg_elt = RT_get_Bernstein_polynomial_nbasis(order);
+nt = size(tri, 1);
+n = nt * dof_dg_elt;
+w = zeros(n, 1);
+[basis, nbasis] = Lagrange_basis(order);
+Mn = RT_inner_product_L1L2L3_all(order);
+one_coeff = ones(nbasis, 1);
+local_integrals = I_mid(Mn * one_coeff);
+
+for k = 1:nt
+    vert_idx = tri(k,:);
+    x1 = vert(vert_idx(1), 1); y1 = vert(vert_idx(1), 2);
+    x2 = vert(vert_idx(2), 1); y2 = vert(vert_idx(2), 2);
+    x3 = vert(vert_idx(3), 1); y3 = vert(vert_idx(3), 2);
+    Bmap = [x2-x1, x3-x1; y2-y1, y3-y1];
+    rows = (k-1)*dof_dg_elt + (1:dof_dg_elt);
+    w(rows) = local_integrals * I_mid(det(Bmap));
+end
+
+[~, pivot] = max(abs(w));
+if w(pivot) == 0
+    error('Cannot build mean-zero DG basis: zero pivot.');
+end
+cols = 1:(n-1);
+free = 1:n;
+free(pivot) = [];
+row_idx = [free(:); repmat(pivot, n-1, 1)];
+col_idx = [cols(:); cols(:)];
+vals = [ones(n-1, 1); -w(free(:)) ./ w(pivot)];
+Z = sparse(row_idx, col_idx, vals, n, n-1);
 end
 
 function F = RT_mixed_set_f(RT_order, vert, edge, tri, tri2edge, f)

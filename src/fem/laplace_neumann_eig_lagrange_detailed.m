@@ -51,9 +51,14 @@ while true
     request = min(ndof, request + neig_positive + 1);
 end
 
-% Normalize the eigenvectors in the L2 inner product used in the paper.
+% Choose the mean-zero representative modulo constants and normalize in the
+% L2 inner product used in the Neumann Lehmann--Goerisch theorem.
 Mmid = I_mid(A_L2);
+one_vec = ones(size(eig_func, 1), 1);
+area_mass = one_vec' * Mmid * one_vec;
 for k = 1:size(eig_func, 2)
+    mean_coeff = (one_vec' * Mmid * eig_func(:,k)) / area_mass;
+    eig_func(:,k) = eig_func(:,k) - mean_coeff * one_vec;
     nrm = sqrt(eig_func(:,k)' * Mmid * eig_func(:,k));
     eig_func(:,k) = eig_func(:,k) / nrm;
 end

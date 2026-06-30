@@ -19,9 +19,9 @@ a = I_intval(tri_intval(5));
 b = I_intval(tri_intval(6));
 
 % -------------------------------------------------------------------------
-% CR lower bounds for positive Neumann eigenvalues, Lemma est-tau.
-% The CR Neumann space keeps boundary edge dofs; only the zero mode is later
-% discarded from the sorted eigenvalue list.
+% CR lower bounds for positive Neumann eigenvalues.  Here they are used to
+% produce rho <= mu_{n+1}, the shift required by the Neumann
+% Lehmann--Goerisch theorem.
 % -------------------------------------------------------------------------
 mesh_size_rho = 1/N_rho;
 meshCR = make_mesh_by_gmsh(a, b, mesh_size_rho);
@@ -35,11 +35,12 @@ triByEdge = find_tri2edge(triCR, edgeCR);
 hmax = find_mesh_hmax(vertCR, edgeCR);
 
 global INTERVAL_MODE;
+num_cr_needed = neig_positive + 1;
 if INTERVAL_MODE
-    muCR = positive_neumann_cr_veigs(K_CR, M_CR, neig_positive);
+    muCR = positive_neumann_cr_veigs(K_CR, M_CR, num_cr_needed);
     Ch = I_intval('0.1893') * hmax;
 else
-    muCR = positive_neumann_cr_eigs(K_CR, M_CR, neig_positive);
+    muCR = positive_neumann_cr_eigs(K_CR, M_CR, num_cr_needed);
     Ch = 0.1893 * hmax;
 end
 
@@ -47,11 +48,11 @@ muLowCand = muCR ./ (1 + muCR .* (Ch^2));
 [~, idx] = sort(I_mid(muLowCand));
 muLowCand = muLowCand(idx);
 
-if numel(I_mid(muLowCand)) < neig_positive
+if numel(I_mid(muLowCand)) < num_cr_needed
     error('CR Neumann eigen computation returned too few eigenvalues.');
 end
 
-mu_low = muLowCand(1:neig_positive);
+mu_low_cr = I_intval(muLowCand(1:neig_positive));
 
 % -------------------------------------------------------------------------
 % Conforming Neumann eigenpairs on the same full-dof mesh used by the
@@ -70,7 +71,51 @@ triCG  = meshCG.elements;
     laplace_neumann_eig_lagrange_detailed(LagrangeOrder, vertCG, edgeCG, triCG, neig_positive);
 
 mu_h = I_intval(mu_h(:));
-mu_low = I_intval(mu_low(:));
+
+% -------------------------------------------------------------------------
+% Neumann Lehmann--Goerisch lower bounds.  The RT/H(div) auxiliary problem
+% uses zero normal flux, matching the Neumann theorem and the mean-zero
+% positive eigenspace.  We apply LG on every certified prefix p with its own
+% shift rho_p <= mu_{p+1}; this keeps high-mode uncertainty from spoiling the
+% low modes.
+% -------------------------------------------------------------------------
+RTorder = LagrangeOrder;
+A2 = RT_Hdiv_problem_dirichlet(meshCG, RTorder, psi_list, 'zero_normal');
+A0 = psi_list' * K_CG * psi_list;
+A1 = psi_list' * M_CG * psi_list;
+
+mu_low = mu_low_cr(:);
+for p = 1:neig_positive
+    rho_p = muLowCand(p + 1);
+    Lambda_p = max(mu_h(1:p));
+    if ~(I_sup(Lambda_p) < I_inf(rho_p))
+        continue;
+    end
+
+    Ap = A0(1:p,1:p) - rho_p * A1(1:p,1:p);
+    Bp = A0(1:p,1:p) - 2*rho_p * A1(1:p,1:p) + (rho_p*rho_p) * A2(1:p,1:p);
+    Ap = I_hull(Ap, Ap');
+    Bp = I_hull(Bp, Bp');
+
+    try
+        tau = I_eig(Ap, Bp, p);
+    catch
+        continue;
+    end
+    tau = tau(:);
+    tauRev = tau(end:-1:1);
+    mu_low_lg = rho_p - rho_p ./ (1 - tauRev);
+    [~, idx_lg] = sort(I_mid(mu_low_lg));
+    mu_low_lg = I_intval(mu_low_lg(idx_lg));
+    tau_for_lg = tauRev(idx_lg);
+
+    for k = 1:p
+        if I_sup(tau_for_lg(k)) < 0 && I_inf(mu_low_lg(k)) > I_inf(mu_low(k))
+            mu_low(k) = mu_low_lg(k);
+        end
+    end
+end
+
 mu_bounds = I_hull(mu_h, mu_low);
 
 Est_grad = [];
