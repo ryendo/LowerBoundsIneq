@@ -65,12 +65,21 @@ eta_phi = calc_grad_error_bounds(lams_interval, lams_h, uh_list, K_D, M_D, clust
 % eigenspace estimator eta_psi.  These are used only in U_{i,M}.
 % -------------------------------------------------------------------------
 num_neumann_needed = M_neumann + 1;
-[mu_interval, mu_h, psi_list, K_N, M_N, N_xx, N_xy, N_yy, N_ux_vy, N_uy_vx, eta_psi] = ...
+[mu_raw, mu_h_raw, psi_list, K_N, M_N, N_xx, N_xy, N_yy, N_ux_vy, N_uy_vx] = ...
     calc_neumann_eigen_bounds_any_order_1k_wh(num_neumann_needed, base_triangle, N_LG, N_rho, fem_ord_LG, meshCG);
 
 if size(uh_list_full, 1) ~= size(psi_list, 1)
     error('Dirichlet full-dof vectors and Neumann vectors live on different meshes.');
 end
+
+% The perturbation estimate applies to both Dirichlet and Neumann eigenvalues
+% under the same affine cell map; see the paper's eigenvalue perturbation
+% lemma for either boundary condition.  The Neumann eigenspace errors used in
+% epsilon_C are therefore computed from the scaled cell enclosures.
+mu_interval = mu_raw * scale_interval;
+mu_h = mu_h_raw * scale_interval;
+mu_clusters = auto_cluster_eigenvalues(mu_interval, 0.01);
+eta_psi = calc_grad_error_bounds(mu_interval, mu_h, psi_list, K_N, M_N, mu_clusters);
 
 % -------------------------------------------------------------------------
 % Shape derivative matrices from the paper's first/second derivative
@@ -164,10 +173,16 @@ eps_G = norm_dotP^2 * eta_phi(i) * (sqrt(lami) + sqrt(lamih));
 G_upper = Ghat + eps_G;
 
 U_upper = G_upper;
+C_hat = I_intval(zeros(M_neumann, 1));
+eps_C_list = I_intval(zeros(M_neumann, 1));
+Csq_lower_list = I_intval(zeros(M_neumann, 1));
 for m = 1:M_neumann
     Chat = neumann_complement_coupling(uh_list_full(:,i), psi_list(:,m), dotP, N_xx, N_yy, N_ux_vy, N_uy_vx);
     eps_C = norm_dotP * (eta_phi(i) * sqrt(mu_interval(m)) + sqrt(lamih) * eta_psi(m));
     [Csq_lower, ~] = squared_abs_bounds(Chat, eps_C);
+    C_hat(m) = Chat;
+    eps_C_list(m) = eps_C;
+    Csq_lower_list(m) = Csq_lower;
 
     if I_inf(mu_interval(m)) <= 0
         error('mu_%d is not provably positive.', m);
@@ -202,10 +217,17 @@ diagnostics.dlami = dlami;
 diagnostics.D_lower = D_lower;
 diagnostics.S_lower = S_lower;
 diagnostics.U_upper = U_upper;
+diagnostics.Ghat = Ghat;
+diagnostics.G_upper = G_upper;
 diagnostics.Q_tail_upper = Q_tail_upper;
 diagnostics.tail_gap_upper = tail_gap_upper;
 diagnostics.eta_phi_i = eta_phi(i);
 diagnostics.eta_psi = eta_psi(1:M_neumann);
+diagnostics.mu_interval = mu_interval(1:M_neumann);
+diagnostics.mu_h = mu_h(1:M_neumann);
+diagnostics.C_hat = C_hat;
+diagnostics.eps_C = eps_C_list;
+diagnostics.Csq_lower = Csq_lower_list;
 
 end
 

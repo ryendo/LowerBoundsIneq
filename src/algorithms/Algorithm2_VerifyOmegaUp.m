@@ -10,7 +10,8 @@ function [is_verified, results, diagnostics] = Algorithm2_VerifyOmegaUp( ...
 %   Ny              : number of y-subintervals for R_ij covering
 %   Ny_axis         : number of y-subintervals for I_m^y on x=1/2
 %   N_spec          : spectral truncation index N_spec
-%   mesh_params     : struct for FEM/LG settings
+%   mesh_params     : struct for FEM/LG settings; optional M_neumann gives
+%                     the Neumann cutoff M in the Dirichlet--Neumann estimator
 %
 % Outputs:
 %   is_verified, results, diagnostics
@@ -256,11 +257,11 @@ yI = I_hull(box.y(1), box.y(2));
 base_triangle = I_intval([0, 0, 1, 0, box.x(1), box.y(1)]);
 triangle      = I_intval([0, 0, 1, 0, xI, yI]);
 
-[N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
+[N_LG, N_rho, fem_ord_LG, M_neumann] = get_mesh_params_for_calc_ddlami(mesh_params, N_spec);
 
 [~, ~, ddlambda_lower] = calc_ddlami_lower_bound( ...
     1, base_triangle, triangle, e_direction, ...
-    N_spec, N_LG, N_rho, fem_ord_LG);
+    N_spec, N_LG, N_rho, fem_ord_LG, M_neumann);
 
 % ------------------------------------------------------------------------
 % [Lower bound of ∂²J_k/∂x²] via Lemma (Jkxx-simple):
@@ -418,11 +419,11 @@ yI = I_hull(box.y(1), box.y(2));
 base_triangle = I_intval([0, 0, 1, 0, p_anchor(1), p_anchor(2)]);
 triangle      = [0, 0, I_intval('1'), 0, xI, yI];
 
-[N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params);
+[N_LG, N_rho, fem_ord_LG, M_neumann] = get_mesh_params_for_calc_ddlami(mesh_params, N_spec);
 
 [~, dlambdaI, ddlambda_lower] = calc_ddlami_lower_bound( ...
     1, base_triangle, triangle, e_direction, ...
-    N_spec, N_LG, N_rho, fem_ord_LG);
+    N_spec, N_LG, N_rho, fem_ord_LG, M_neumann);
 
 % Certified lower bound for ∂λ1/∂y over the anchor computation
 dotlambda_lower = I_intval((I_inf(dlambdaI)));
@@ -509,11 +510,13 @@ end
 % ========================================================================
 % Mesh parameter extraction for calc_ddlami_lower_bound
 % ========================================================================
-function [N_LG, N_rho, fem_ord_LG] = get_mesh_params_for_calc_ddlami(mesh_params)
+function [N_LG, N_rho, fem_ord_LG, M_neumann] = get_mesh_params_for_calc_ddlami(mesh_params, N_spec)
 % Minimal helper to keep the Algorithm2 interface unchanged.
 %
 % Required fields for calc_ddlami_lower_bound:
 %   N_LG, N_rho, fem_ord_LG
+% Optional field:
+%   M_neumann, the Neumann cutoff M in Theorem main-theorem-est.
 %
 % If your project uses different field names, adapt them here (only here).
 
@@ -537,6 +540,18 @@ elseif isfield(mesh_params, 'fem_ord_lg')
     fem_ord_LG = mesh_params.fem_ord_lg;
 else
     error('mesh_params must contain fem_ord_LG (or fem_ord_lg).');
+end
+
+if isfield(mesh_params, 'M_neumann')
+    M_neumann = mesh_params.M_neumann;
+elseif isfield(mesh_params, 'M_N')
+    M_neumann = mesh_params.M_N;
+else
+    M_neumann = N_spec;
+end
+
+if isempty(M_neumann) || M_neumann < 1
+    error('mesh_params.M_neumann must be a positive integer when supplied.');
 end
 end
 

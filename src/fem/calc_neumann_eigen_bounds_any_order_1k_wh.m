@@ -73,8 +73,11 @@ mu_h = I_intval(mu_h(:));
 mu_low = I_intval(mu_low(:));
 mu_bounds = I_hull(mu_h, mu_low);
 
-clusters = auto_cluster_eigenvalues(mu_bounds, 0.01);
-[Est_grad, ~, ~, ~] = calc_grad_error_bounds(mu_bounds, mu_h, psi_list, K_CG, M_CG, clusters);
+Est_grad = [];
+if nargout >= 11
+    clusters = auto_cluster_eigenvalues(mu_bounds, 0.01);
+    [Est_grad, ~, ~, ~] = calc_grad_error_bounds(mu_bounds, mu_h, psi_list, K_CG, M_CG, clusters);
+end
 
 end
 
