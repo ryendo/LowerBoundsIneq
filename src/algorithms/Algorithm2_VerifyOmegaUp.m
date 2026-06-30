@@ -252,9 +252,10 @@ xI = I_hull(box.x(1), box.x(2));
 yI = I_hull(box.y(1), box.y(2));
 
 % ------------------------------------------------------------------------
-% [Lower bound of ∂²λ1/∂x²] using calc_ddlami_lower_bound at the anchor triangle
+% [Lower bound of ∂²λ1/∂x²] using calc_ddlami_lower_bound at the anchor
+% triangle p_ij = (x_i, y_j) specified in Algorithm certify-d2Jdx2.
 % ------------------------------------------------------------------------
-base_triangle = I_intval([0, 0, 1, 0, box.x(1), box.y(1)]);
+base_triangle = I_intval([0, 0, 1, 0, p_anchor(1), p_anchor(2)]);
 triangle      = I_intval([0, 0, 1, 0, xI, yI]);
 
 [N_LG, N_rho, fem_ord_LG, M_neumann] = get_mesh_params_for_calc_ddlami(mesh_params, N_spec);
