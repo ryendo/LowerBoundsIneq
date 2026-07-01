@@ -42,6 +42,7 @@ class Mode:
 @dataclass
 class SpectralProbe:
     J: int
+    M: int | None
     lambda1: float
     lambda_x: float
     lambda_y: float
@@ -49,6 +50,9 @@ class SpectralProbe:
     lambda_xxx_finite: float
     lambda_xxy_finite: float
     lambda_xx0_lower: float
+    lambda_xx_tail_energy: float
+    lambda_xx_tail_bound: float
+    old_dirichlet_tail_energy: float
     m_xxx: float
     m_xxy: float
     tail_mode: str
@@ -235,6 +239,10 @@ def build_spectral_probe(
     gy_d: np.ndarray,
     weights: np.ndarray,
     tail_mode: str,
+    modes_n: list[Mode] | None = None,
+    gx_n: np.ndarray | None = None,
+    gy_n: np.ndarray | None = None,
+    M: int | None = None,
 ) -> SpectralProbe:
     """Compute lambda_xx(0,0), M_xxx, and M_xxy for one truncation level."""
     mats = p_derivative_matrices()
@@ -253,17 +261,30 @@ def build_spectral_probe(
 
     norm_fx_x = float(np.sum(weights * (fx_x**2 + fy_x**2)))
     norm_fx_y = float(np.sum(weights * (fx_y**2 + fy_y**2)))
+    projected_x = float(np.sum((b_x[:J] ** 2) / lambdas[:J]))
+    old_dirichlet_tail_x = max(norm_fx_x - projected_x, 0.0)
 
-    def w_bounds(b_vec: np.ndarray, forcing_norm_sq: float) -> tuple[float, float]:
+    neumann_tail_x = old_dirichlet_tail_x
+    if tail_mode == "neumann_corrected_tail":
+        if modes_n is None or gx_n is None or gy_n is None or M is None:
+            raise ValueError("neumann_corrected_tail requires Neumann modes and M")
+        mus = np.array([mode.eigenvalue for mode in modes_n])
+        neumann_rotated = (fx_x @ (weights[:, None] * (-gy_n))) + (fy_x @ (weights[:, None] * gx_n))
+        n_m = float(np.sum((neumann_rotated[:M] ** 2) / mus[:M]))
+        neumann_tail_x = max(norm_fx_x - projected_x - n_m, 0.0)
+
+    def w_bounds(b_vec: np.ndarray, forcing_norm_sq: float, direction: str) -> tuple[float, float]:
         # Paper formula: w_a = -sum_{j>=2} B_j(a)/(lambda_j-lambda_1) * phi_j.
         # We bound ||w_a|| and ||grad w_a|| by finite spectral sums plus a tail bound.
         deltas = lambdas[1:J] - lambda1
         finite_b = b_vec[1:J]
         w0_sq = float(np.sum((finite_b**2) / (deltas**2)))
         w1_sq = float(np.sum(lambdas[1:J] * (finite_b**2) / (deltas**2)))
-        if tail_mode == "dirichlet_parseval_tail":
+        if tail_mode in {"dirichlet_parseval_tail", "neumann_corrected_tail"}:
             projected = float(np.sum((b_vec[:J] ** 2) / lambdas[:J]))
             tail_energy = max(forcing_norm_sq - projected, 0.0)
+            if tail_mode == "neumann_corrected_tail" and direction == "x":
+                tail_energy = neumann_tail_x
             lambda_next = lambdas[J]
             gap_next = lambda_next - lambda1
             w0_sq += lambda_next / (gap_next**2) * tail_energy
@@ -272,8 +293,8 @@ def build_spectral_probe(
             raise ValueError(f"unknown tail mode: {tail_mode}")
         return math.sqrt(max(w0_sq, 0.0)), math.sqrt(max(w1_sq, 0.0))
 
-    w0_x, w1_x = w_bounds(b_x, norm_fx_x)
-    w0_y, w1_y = w_bounds(b_y, norm_fx_y)
+    w0_x, w1_x = w_bounds(b_x, norm_fx_x, "x")
+    w0_y, w1_y = w_bounds(b_y, norm_fx_y, "y")
 
     # Paper formula: finite spectral formula for lambda_xx at the equilateral triangle.
     axx_x, axx_y = apply_matrix_to_gradient(mats["xx"], phi1_x, phi1_y)
@@ -281,12 +302,15 @@ def build_spectral_probe(
     finite_second = float(np.sum((b_x[1:J] ** 2) / (lambdas[1:J] - lambda1)))
     lambda_xx_finite = a_xx - 2.0 * finite_second
     lambda_xx0_lower = lambda_xx_finite
-    if tail_mode == "dirichlet_parseval_tail":
-        projected_x = float(np.sum((b_x[:J] ** 2) / lambdas[:J]))
-        tail_x = max(norm_fx_x - projected_x, 0.0)
+    lambda_xx_tail_energy = 0.0
+    lambda_xx_tail_bound = 0.0
+    if tail_mode in {"dirichlet_parseval_tail", "neumann_corrected_tail"}:
+        tail_x = old_dirichlet_tail_x if tail_mode == "dirichlet_parseval_tail" else neumann_tail_x
         lambda_next = lambdas[J]
         alpha = lambda_next / (lambda_next - lambda1)
-        lambda_xx0_lower -= 2.0 * alpha * tail_x
+        lambda_xx_tail_energy = tail_x
+        lambda_xx_tail_bound = alpha * tail_x
+        lambda_xx0_lower -= 2.0 * lambda_xx_tail_bound
     elif tail_mode != "tail_ignored":
         raise ValueError(f"unknown tail mode: {tail_mode}")
 
@@ -399,6 +423,7 @@ def build_spectral_probe(
 
     return SpectralProbe(
         J=J,
+        M=M,
         lambda1=lambda1,
         lambda_x=lambda_x,
         lambda_y=lambda_y,
@@ -406,6 +431,9 @@ def build_spectral_probe(
         lambda_xxx_finite=third_finite("x", "x", "x"),
         lambda_xxy_finite=third_finite("x", "x", "y"),
         lambda_xx0_lower=float(lambda_xx0_lower),
+        lambda_xx_tail_energy=float(lambda_xx_tail_energy),
+        lambda_xx_tail_bound=float(lambda_xx_tail_bound),
+        old_dirichlet_tail_energy=float(old_dirichlet_tail_x),
         m_xxx=third_bound("x", "x", "x"),
         m_xxy=third_bound("x", "x", "y"),
         tail_mode=tail_mode,
@@ -444,8 +472,12 @@ def lambda_xx_cell_lower(probe: SpectralProbe, rx: float, ry: float, model: str)
         return probe.lambda_xx0_lower - rx * probe.m_xxx - ry * probe.m_xxy
     if model == "symmetry_first_order":
         return probe.lambda_xx_finite - ry * probe.m_xxy
+    if model == "symmetry_x_even":
+        return probe.lambda_xx0_lower - ry * probe.m_xxy
     if model == "signed_xxy_first_order":
         return probe.lambda_xx_finite + min(-probe.lambda_xxy_finite * ry, 0.0)
+    if model == "signed_xxy":
+        return probe.lambda_xx0_lower + min(-probe.lambda_xxy_finite * ry, 0.0)
     raise ValueError(f"unknown Taylor model: {model}")
 
 
@@ -473,7 +505,7 @@ def shape_radii(cell_shape: str, radius: float) -> tuple[float, float]:
         return radius, 0.0
     if cell_shape == "y_only":
         return 0.0, radius
-    if cell_shape == "omega_up_type":
+    if cell_shape in {"omega_up_type", "omega_up"}:
         return radius, 0.1 * radius
     if cell_shape == "square":
         return radius, radius
@@ -532,6 +564,16 @@ def neighboring_complete_cutoffs(modes: list[Mode], J: int) -> tuple[int, int]:
     prev_complete = max(c for c in cutoffs if c <= J)
     next_complete = min(c for c in cutoffs if c >= J)
     return prev_complete, next_complete
+
+
+def complete_cutoff_candidates(modes: list[Mode], requested: list[int]) -> list[int]:
+    """Expand requested cutoffs to nearby complete eigenspace-shell cutoffs."""
+    out: set[int] = set()
+    for J in requested:
+        prev_complete, next_complete = neighboring_complete_cutoffs(modes, J)
+        out.add(prev_complete)
+        out.add(next_complete)
+    return sorted(out)
 
 
 def lambda_xx_shell_contribution_rows(
@@ -606,6 +648,76 @@ def lambda_xx_shell_contribution_rows(
     return rows
 
 
+def neumann_corrected_tail_rows(
+    j_list: list[int],
+    m_list: list[int],
+    modes_d: list[Mode],
+    gx_d: np.ndarray,
+    gy_d: np.ndarray,
+    modes_n: list[Mode],
+    gx_n: np.ndarray,
+    gy_n: np.ndarray,
+    weights: np.ndarray,
+) -> list[dict[str, object]]:
+    """Compare old Dirichlet-only tail with Neumann-corrected Dirichlet tail."""
+    mats = p_derivative_matrices()
+    lambdas = np.array([mode.eigenvalue for mode in modes_d])
+    mus = np.array([mode.eigenvalue for mode in modes_n])
+    lambda1 = lambdas[0]
+    phi1_x = gx_d[:, 0]
+    phi1_y = gy_d[:, 0]
+    g_x, g_y = apply_matrix_to_gradient(mats["x"], phi1_x, phi1_y)
+    g_norm_sq = float(np.sum(weights * (g_x**2 + g_y**2)))
+    b_x = gradient_pairing(g_x, g_y, gx_d, gy_d, weights)
+    neumann_rotated = (g_x @ (weights[:, None] * (-gy_n))) + (g_y @ (weights[:, None] * gx_n))
+    axx_x, axx_y = apply_matrix_to_gradient(mats["xx"], phi1_x, phi1_y)
+    a_xx = float(np.sum(weights * (axx_x * phi1_x + axx_y * phi1_y)))
+
+    d_sums = {J: float(np.sum((b_x[:J] ** 2) / lambdas[:J])) for J in j_list}
+    finite_second = {
+        J: float(np.sum((b_x[1:J] ** 2) / (lambdas[1:J] - lambda1)))
+        for J in j_list
+    }
+    n_sums = {M: float(np.sum((neumann_rotated[:M] ** 2) / mus[:M])) for M in m_list}
+
+    rows: list[dict[str, object]] = []
+    for J in j_list:
+        lambda_next = lambdas[J]
+        alpha = lambda_next / (lambda_next - lambda1)
+        lambda_xx_finite = a_xx - 2.0 * finite_second[J]
+        old_tail_energy = max(g_norm_sq - d_sums[J], 0.0)
+        old_tail_bound = alpha * old_tail_energy
+        old_lambda_xx_lower = lambda_xx_finite - 2.0 * old_tail_bound
+        for M in m_list:
+            corrected_tail_energy = max(g_norm_sq - d_sums[J] - n_sums[M], 0.0)
+            corrected_tail_bound = alpha * corrected_tail_energy
+            corrected_lambda_xx_lower = lambda_xx_finite - 2.0 * corrected_tail_bound
+            rows.append(
+                {
+                    "J": J,
+                    "M": M,
+                    "lambda_next": lambda_next,
+                    "lambda1": lambda1,
+                    "alpha": alpha,
+                    "G_norm_sq": g_norm_sq,
+                    "D_J": d_sums[J],
+                    "N_M": n_sums[M],
+                    "old_dirichlet_tail_energy": old_tail_energy,
+                    "neumann_corrected_tail_energy": corrected_tail_energy,
+                    "old_tail_bound": old_tail_bound,
+                    "neumann_corrected_tail_bound": corrected_tail_bound,
+                    "tail_energy_ratio": corrected_tail_energy / old_tail_energy if old_tail_energy else 0.0,
+                    "lambda_xx_finite": lambda_xx_finite,
+                    "lambda_xx_old_tail_lower": old_lambda_xx_lower,
+                    "lambda_xx_neumann_tail_lower": corrected_lambda_xx_lower,
+                    "lambda_xx_lower_improvement": corrected_lambda_xx_lower - old_lambda_xx_lower,
+                    "rigorous_part": "Neumann-corrected tail formula; double precision inputs",
+                    "rigorous_flag": "exploratory_double",
+                }
+            )
+    return rows
+
+
 def basis_orthogonality_rows(
     j_list: list[int],
     bc: str,
@@ -656,6 +768,7 @@ def basis_orthogonality_rows(
 
 def parseval_decomposition_rows(
     j_list: list[int],
+    m_list: list[int],
     modes_d: list[Mode],
     gx_d: np.ndarray,
     gy_d: np.ndarray,
@@ -681,12 +794,12 @@ def parseval_decomposition_rows(
     }
     n_sums = {
         M: float(np.sum((neumann_rotated_coupling[:M] ** 2) / mu_n[:M]))
-        for M in j_list
+        for M in m_list
     }
 
     rows: list[dict[str, object]] = []
     for J in j_list:
-        for M in j_list:
+        for M in m_list:
             d_j = d_sums[J]
             n_m = n_sums[M]
             combined = d_j + n_m
@@ -716,6 +829,7 @@ def write_outputs(
     parseval_rows: list[dict[str, object]],
     shell_rows: list[dict[str, object]],
     orthogonality_rows: list[dict[str, object]],
+    neumann_tail_rows: list[dict[str, object]],
 ) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     max_csv = outdir / "max_cell_sizes.csv"
@@ -724,9 +838,12 @@ def write_outputs(
     parseval_csv = outdir / "parseval_decomposition.csv"
     shell_csv = outdir / "lambda_xx_shell_contributions.csv"
     orthogonality_csv = outdir / "basis_orthogonality_diagnostics.csv"
+    neumann_tail_csv = outdir / "neumann_corrected_tail.csv"
+    symmetry_csv = outdir / "symmetry_taylor_cell_sizes.csv"
     fields = [
         "model",
         "J",
+        "M",
         "tail_mode",
         "cell_shape",
         "rx",
@@ -737,6 +854,9 @@ def write_outputs(
         "lambda_xx_finite",
         "lambda_xxx_finite",
         "lambda_xxy_finite",
+        "lambda_xx_tail_energy",
+        "lambda_xx_tail_bound",
+        "old_dirichlet_tail_energy",
         "M_xxx",
         "M_xxy",
         "Rxx1_lower",
@@ -809,6 +929,27 @@ def write_outputs(
         "stiffness_offdiag_max_abs",
         "rigorous_flag",
     ]
+    neumann_tail_fields = [
+        "J",
+        "M",
+        "lambda_next",
+        "lambda1",
+        "alpha",
+        "G_norm_sq",
+        "D_J",
+        "N_M",
+        "old_dirichlet_tail_energy",
+        "neumann_corrected_tail_energy",
+        "old_tail_bound",
+        "neumann_corrected_tail_bound",
+        "tail_energy_ratio",
+        "lambda_xx_finite",
+        "lambda_xx_old_tail_lower",
+        "lambda_xx_neumann_tail_lower",
+        "lambda_xx_lower_improvement",
+        "rigorous_part",
+        "rigorous_flag",
+    ]
     with max_csv.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -833,6 +974,15 @@ def write_outputs(
         writer = csv.DictWriter(f, fieldnames=orthogonality_fields)
         writer.writeheader()
         writer.writerows(orthogonality_rows)
+    with neumann_tail_csv.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=neumann_tail_fields)
+        writer.writeheader()
+        writer.writerows(neumann_tail_rows)
+    symmetry_rows = [row for row in rows if row["model"] in {"symmetry_x_even", "signed_xxy"}]
+    with symmetry_csv.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(symmetry_rows)
 
     summary = outdir / "summary.md"
     with summary.open("w") as f:
@@ -846,9 +996,13 @@ def write_outputs(
         f.write("A row that reaches the configured `--max-radius` search cap should be read as a lower diagnostic, not as the true maximal accepted radius.\n\n")
         f.write("Taylor models:\n\n")
         f.write("- `norm_bound`: existing first-order Taylor lower bound using `-rx M_xxx - ry M_xxy`.\n")
-        f.write("- `symmetry_first_order`: finite `lambda_xx(0,0)` with the `rx M_xxx` penalty removed by equilateral x-symmetry, keeping `-ry M_xxy`.\n")
-        f.write("- `signed_xxy_first_order`: finite `lambda_xx(0,0)` plus the signed affine `lambda_xxy t` minimum on `t in [-ry,0]`.\n")
+        f.write("- `symmetry_x_even`: `lambda_xx(0,0)` lower bound with the `rx M_xxx` penalty removed by equilateral x-symmetry, keeping `-ry M_xxy`.\n")
+        f.write("- `signed_xxy`: `lambda_xx(0,0)` lower bound plus the signed affine `lambda_xxy t` minimum on `t in [-ry,0]`.\n")
         f.write("- `dirichlet_parseval_tail`: the intentionally crude Dirichlet-only Parseval tail diagnostic; it is not used by the two symmetry-improved models.\n\n")
+        f.write("Rigor status:\n\n")
+        f.write("- The Neumann-corrected tail formula for `lambda_xx(0,0)` is the rigorous direction mathematically, but this script still evaluates all integrals in double precision.\n")
+        f.write("- The `symmetry_x_even` and `signed_xxy` cell models are exploratory because the fourth-order `s^2`, `st`, and `t^2` remainders are not yet bounded.\n")
+        f.write("- The `M_xxy` norm bound remains conservative; for `neumann_corrected_tail` only the `P_x` tail entering `lambda_xx` is Neumann-corrected.\n\n")
 
         f.write("Finite signed derivative diagnostics:\n\n")
         f.write("| J | cluster complete | complete cutoffs | lambda_x | lambda_xx finite | lambda_xxx finite | lambda_xxy finite | M_xxx/abs | M_xxy/abs |\n")
@@ -891,47 +1045,66 @@ def write_outputs(
                     f"{float(row['fraction_of_last_cumulative']):.8e} |\n"
                 )
             f.write("- Full shell table is written to `lambda_xx_shell_contributions.csv`.\n")
+
+        if neumann_tail_rows:
+            best_tail = min(neumann_tail_rows, key=lambda r: float(r["neumann_corrected_tail_energy"]))
+            f.write("\nNeumann-corrected tail diagnostic:\n\n")
+            f.write("| J | M | old tail energy | corrected tail energy | ratio | old lambda_xx lower | corrected lambda_xx lower |\n")
+            f.write("|---:|---:|---:|---:|---:|---:|---:|\n")
+            for row in neumann_tail_rows:
+                if row["J"] in {30, 51, 101, 203} and row["M"] in {31, 50, 101, 200}:
+                    f.write(
+                        f"| {row['J']} | {row['M']} | {float(row['old_dirichlet_tail_energy']):.8e} | "
+                        f"{float(row['neumann_corrected_tail_energy']):.8e} | {float(row['tail_energy_ratio']):.8e} | "
+                        f"{float(row['lambda_xx_old_tail_lower']):.8e} | "
+                        f"{float(row['lambda_xx_neumann_tail_lower']):.8e} |\n"
+                    )
+            f.write(
+                f"- Smallest corrected tail in this run: `{float(best_tail['neumann_corrected_tail_energy']):.8e}` "
+                f"at `J={best_tail['J']}`, `M={best_tail['M']}`.\n"
+            )
+            f.write("- Full comparison is written to `neumann_corrected_tail.csv`.\n")
         f.write("\nCell-size bisection results:\n\n")
-        f.write("| model | J | tail mode | cell shape | max rx | max ry | distance | Jxx1 lower | Jxx2 lower | rigorous flag |\n")
-        f.write("|---|---:|---|---|---:|---:|---:|---:|---:|---|\n")
+        f.write("| model | J | M | tail mode | cell shape | max rx | max ry | distance | Jxx1 lower | Jxx2 lower | rigorous flag |\n")
+        f.write("|---|---:|---:|---|---|---:|---:|---:|---:|---:|---|\n")
         for row in rows:
             f.write(
-                f"| {row['model']} | {row['J']} | {row['tail_mode']} | {row['cell_shape']} | "
+                f"| {row['model']} | {row['J']} | {row['M']} | {row['tail_mode']} | {row['cell_shape']} | "
                 f"{float(row['rx']):.8e} | {float(row['ry']):.8e} | {float(row['distance']):.8e} | "
                 f"{float(row['Jxx1_lower']):.8e} | {float(row['Jxx2_lower']):.8e} | {row['rigorous_flag']} |\n"
             )
 
-        omega_rows = [row for row in rows if row["cell_shape"] == "omega_up_type"]
+        omega_rows = [row for row in rows if row["cell_shape"] in {"omega_up", "omega_up_type"}]
         if omega_rows:
             best = max(omega_rows, key=lambda r: float(r["rx"]))
             f.write("\nMost important Omega_up-type result:\n\n")
             f.write(
                 f"- best `rx = {float(best['rx']):.8e}`, `ry = {float(best['ry']):.8e}` "
-                f"with model `{best['model']}`, `J = {best['J']}`, tail mode `{best['tail_mode']}`.\n"
+                f"with model `{best['model']}`, `J = {best['J']}`, `M = {best['M']}`, tail mode `{best['tail_mode']}`.\n"
             )
             f.write(
                 f"- target `rx >= 1e-2`, `ry = 1e-3`: "
                 f"{'reached' if float(best['rx']) >= 1e-2 and float(best['ry']) >= 1e-3 else 'not reached'}.\n"
             )
             f.write("\nOmega_up-type best row by model:\n\n")
-            f.write("| model | best rx | best ry | J | tail mode | Jxx2 lower |\n")
-            f.write("|---|---:|---:|---:|---|---:|\n")
+            f.write("| model | best rx | best ry | J | M | tail mode | Jxx2 lower |\n")
+            f.write("|---|---:|---:|---:|---:|---|---:|\n")
             for model in sorted({row["model"] for row in omega_rows}):
                 model_rows = [row for row in omega_rows if row["model"] == model]
                 model_best = max(model_rows, key=lambda r: float(r["rx"]))
                 f.write(
                     f"| {model} | {float(model_best['rx']):.8e} | {float(model_best['ry']):.8e} | "
-                    f"{model_best['J']} | {model_best['tail_mode']} | {float(model_best['Jxx2_lower']):.8e} |\n"
+                    f"{model_best['J']} | {model_best['M']} | {model_best['tail_mode']} | {float(model_best['Jxx2_lower']):.8e} |\n"
                 )
 
         target_rows = [row for row in diagnostics if row["cell_shape"] == "omega_up_target_1e-2"]
         if target_rows:
             f.write("\nTarget diagnostic at `rx=1e-2`, `ry=1e-3`:\n\n")
-            f.write("| model | J | tail mode | Jxx1 lower | Jxx2 lower | success |\n")
-            f.write("|---|---:|---|---:|---:|---|\n")
+            f.write("| model | J | M | tail mode | Jxx1 lower | Jxx2 lower | success |\n")
+            f.write("|---|---:|---:|---|---:|---:|---|\n")
             for row in target_rows:
                 f.write(
-                    f"| {row['model']} | {row['J']} | {row['tail_mode']} | "
+                    f"| {row['model']} | {row['J']} | {row['M']} | {row['tail_mode']} | "
                     f"{float(row['Jxx1_lower']):.8e} | {float(row['Jxx2_lower']):.8e} | {row['success']} |\n"
                 )
 
@@ -950,8 +1123,8 @@ def main() -> None:
     parser.add_argument("--J-list", default="30,50,100,200", help="comma-separated truncation levels")
     parser.add_argument(
         "--tail-modes",
-        default="tail_ignored,dirichlet_parseval_tail",
-        help="comma-separated tail modes: tail_ignored, dirichlet_parseval_tail",
+        default="tail_ignored,dirichlet_parseval_tail,neumann_corrected_tail",
+        help="comma-separated tail modes: tail_ignored, dirichlet_parseval_tail, neumann_corrected_tail",
     )
     parser.add_argument("--nq", type=int, default=260, help="1D Gauss quadrature order")
     parser.add_argument("--rxx-samples", type=int, default=81, help="sample count per direction for Rxx lower diagnostic")
@@ -959,20 +1132,23 @@ def main() -> None:
     parser.add_argument("--outdir", default="results/omega_up_taylor_probe", help="output directory")
     args = parser.parse_args()
 
-    j_list = parse_j_list(args.J_list)
+    requested_j_list = parse_j_list(args.J_list)
     tail_modes = [x.strip() for x in args.tail_modes.split(",") if x.strip()]
-    max_j = max(j_list)
-    needed_modes = max_j + 128
+    max_requested_j = max(requested_j_list)
+    needed_modes = max_requested_j + 128
     x, y, weights = triangle_quadrature(args.nq)
     modes_d = enumerate_equilateral_modes("D", needed_modes)
     values_d, gx_d, gy_d = orthonormalize_by_clusters(modes_d, x, y, weights)
-    modes_n = enumerate_equilateral_modes("N", max_j + 128)
+    modes_n = enumerate_equilateral_modes("N", needed_modes)
     values_n, gx_n, gy_n = orthonormalize_by_clusters(modes_n, x, y, weights)
+    j_list = complete_cutoff_candidates(modes_d, requested_j_list)
+    m_list = complete_cutoff_candidates(modes_n, requested_j_list)
+    max_j = max(j_list)
 
     rows: list[dict[str, object]] = []
     diagnostics: list[dict[str, object]] = []
     third_rows: list[dict[str, object]] = []
-    cell_shapes = ["x_only", "y_only", "omega_up_type", "square"]
+    cell_shapes = ["x_only", "y_only", "omega_up", "square"]
     target_checks = [
         ("omega_up_target_1e-2", 1e-2, 1e-3),
     ]
@@ -989,6 +1165,7 @@ def main() -> None:
         return {
             "model": model,
             "J": probe.J,
+            "M": probe.M if probe.M is not None else "",
             "tail_mode": probe.tail_mode,
             "cell_shape": cell_shape,
             "rx": rx,
@@ -999,6 +1176,9 @@ def main() -> None:
             "lambda_xx_finite": probe.lambda_xx_finite,
             "lambda_xxx_finite": probe.lambda_xxx_finite,
             "lambda_xxy_finite": probe.lambda_xxy_finite,
+            "lambda_xx_tail_energy": probe.lambda_xx_tail_energy,
+            "lambda_xx_tail_bound": probe.lambda_xx_tail_bound,
+            "old_dirichlet_tail_energy": probe.old_dirichlet_tail_energy,
             "M_xxx": probe.m_xxx,
             "M_xxy": probe.m_xxy,
             "Rxx1_lower": r1,
@@ -1012,20 +1192,34 @@ def main() -> None:
 
     for j in j_list:
         probe_tail_modes = list(dict.fromkeys(tail_modes + ["tail_ignored"]))
-        probes: dict[str, SpectralProbe] = {}
+        probes: dict[tuple[str, int | None], SpectralProbe] = {}
         for tail_mode in probe_tail_modes:
-            probe = build_spectral_probe(j, modes_d, gx_d, gy_d, weights, tail_mode)
-            probes[tail_mode] = probe
-            print(
-                f"J={j}, tail_mode={tail_mode}: lambda_xx0_lower={probe.lambda_xx0_lower:.8e}, "
-                f"lambda_xx_finite={probe.lambda_xx_finite:.8e}, "
-                f"lambda_xxx_finite={probe.lambda_xxx_finite:.8e}, "
-                f"lambda_xxy_finite={probe.lambda_xxy_finite:.8e}, "
-                f"M_xxx={probe.m_xxx:.8e}, M_xxy={probe.m_xxy:.8e}",
-                flush=True,
-            )
+            m_values = m_list if tail_mode == "neumann_corrected_tail" else [None]
+            for m in m_values:
+                probe = build_spectral_probe(
+                    j,
+                    modes_d,
+                    gx_d,
+                    gy_d,
+                    weights,
+                    tail_mode,
+                    modes_n=modes_n,
+                    gx_n=gx_n,
+                    gy_n=gy_n,
+                    M=m,
+                )
+                probes[(tail_mode, m)] = probe
+                m_label = "" if m is None else f", M={m}"
+                print(
+                    f"J={j}{m_label}, tail_mode={tail_mode}: lambda_xx0_lower={probe.lambda_xx0_lower:.8e}, "
+                    f"lambda_xx_finite={probe.lambda_xx_finite:.8e}, "
+                    f"lambda_xxx_finite={probe.lambda_xxx_finite:.8e}, "
+                    f"lambda_xxy_finite={probe.lambda_xxy_finite:.8e}, "
+                    f"M_xxx={probe.m_xxx:.8e}, M_xxy={probe.m_xxy:.8e}",
+                    flush=True,
+                )
 
-        finite_probe = probes["tail_ignored"]
+        finite_probe = probes[("tail_ignored", None)]
         prev_complete, next_complete = neighboring_complete_cutoffs(modes_d, j)
         third_rows.append(
             {
@@ -1049,10 +1243,15 @@ def main() -> None:
         )
 
         model_plan: list[tuple[str, SpectralProbe]] = []
-        for tail_mode in tail_modes:
-            model_plan.append(("norm_bound", probes[tail_mode]))
-        model_plan.append(("symmetry_first_order", finite_probe))
-        model_plan.append(("signed_xxy_first_order", finite_probe))
+        for probe in probes.values():
+            model_plan.append(("norm_bound", probe))
+        model_plan.append(("symmetry_x_even", finite_probe))
+        model_plan.append(("signed_xxy", finite_probe))
+        for m in m_list:
+            corrected_probe = probes.get(("neumann_corrected_tail", m))
+            if corrected_probe is not None:
+                model_plan.append(("symmetry_x_even", corrected_probe))
+                model_plan.append(("signed_xxy", corrected_probe))
 
         for model, probe in model_plan:
             for shape in cell_shapes:
@@ -1064,14 +1263,15 @@ def main() -> None:
                 values = jxx_lower(probe, rx, ry, args.rxx_samples, model)
                 diagnostics.append(output_row(model, probe, label, rx, ry, values))
 
-    parseval_rows = parseval_decomposition_rows(j_list, modes_d, gx_d, gy_d, modes_n, gx_n, gy_n, weights)
+    parseval_rows = parseval_decomposition_rows(j_list, m_list, modes_d, gx_d, gy_d, modes_n, gx_n, gy_n, weights)
     shell_rows = lambda_xx_shell_contribution_rows(modes_d, gx_d, gy_d, weights, max_j)
+    neumann_tail_rows = neumann_corrected_tail_rows(j_list, m_list, modes_d, gx_d, gy_d, modes_n, gx_n, gy_n, weights)
     orthogonality_rows = (
         basis_orthogonality_rows(j_list, "D", modes_d, values_d, gx_d, gy_d, weights)
-        + basis_orthogonality_rows(j_list, "N", modes_n, values_n, gx_n, gy_n, weights)
+        + basis_orthogonality_rows(m_list, "N", modes_n, values_n, gx_n, gy_n, weights)
     )
 
-    write_outputs(Path(args.outdir), rows, diagnostics, third_rows, parseval_rows, shell_rows, orthogonality_rows)
+    write_outputs(Path(args.outdir), rows, diagnostics, third_rows, parseval_rows, shell_rows, orthogonality_rows, neumann_tail_rows)
     print(f"Wrote {args.outdir}/summary.md")
     print(f"Wrote {args.outdir}/max_cell_sizes.csv")
     print(f"Wrote {args.outdir}/diagnostics.csv")
@@ -1079,6 +1279,8 @@ def main() -> None:
     print(f"Wrote {args.outdir}/parseval_decomposition.csv")
     print(f"Wrote {args.outdir}/lambda_xx_shell_contributions.csv")
     print(f"Wrote {args.outdir}/basis_orthogonality_diagnostics.csv")
+    print(f"Wrote {args.outdir}/neumann_corrected_tail.csv")
+    print(f"Wrote {args.outdir}/symmetry_taylor_cell_sizes.csv")
 
 
 if __name__ == "__main__":
