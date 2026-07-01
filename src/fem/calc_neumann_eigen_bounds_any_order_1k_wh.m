@@ -9,7 +9,11 @@ function [mu_bounds, mu_h, psi_list, K_CG, M_CG, A_xx, A_xy, A_yy, A_ux_vy, A_uy
 %   mu_1, ..., mu_neig_positive.
 % The zero constant eigenvalue is solved internally and then discarded.
 
-format compact long infsup
+try
+    format compact long infsup
+catch
+    format compact long
+end
 
 if nargin < 6
     meshCG = [];
@@ -171,7 +175,11 @@ n = size(K_CR, 1);
 request = min(n, max(neig_positive + 4, 8));
 
 while true
-    [~, D, flag] = eigs(I_mid(K_CR), I_mid(M_CR), request, 'smallestabs');
+    try
+        [~, D, flag] = eigs(I_mid(K_CR), I_mid(M_CR), request, 'smallestabs');
+    catch
+        [~, D, flag] = eigs(I_mid(K_CR), I_mid(M_CR), request, 'sm');
+    end
     if flag ~= 0
         warning('EIGS did not fully converge for Neumann CR shifts; using available Ritz values.');
     end

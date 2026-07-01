@@ -591,7 +591,7 @@ reason = '';
 
 Gint = U' * M * U;
 Gsym = (Gint + Gint') / 2;
-Gmid = mid(Gsym);
+Gmid = I_mid(Gsym);
 
 [R, pflag] = chol(Gmid);
 if pflag ~= 0

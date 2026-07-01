@@ -196,7 +196,7 @@ function [Uo, ok] = orthonormalize_wrt_M(U, M)
     Gsym = (Gint + Gint')/2;
 
     % Use midpoint only to build a preconditioner (R)
-    Gmid = mid(Gsym);                  % double symmetric
+    Gmid = I_mid(Gsym);                % double symmetric midpoint
 
     % Cholesky on the midpoint (preconditioner)
     [R, pflag] = chol(Gmid);
