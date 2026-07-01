@@ -19,16 +19,47 @@ Taylor models:
 - `signed_xxy_first_order`: finite `lambda_xx(0,0)` plus the signed affine `lambda_xxy t` minimum on `t in [-ry,0]`.
 - `dirichlet_parseval_tail`: the intentionally crude Dirichlet-only Parseval tail diagnostic; it is not used by the two symmetry-improved models.
 
-Finite third derivative diagnostics:
+Finite signed derivative diagnostics:
 
-| J | cluster complete | lambda_xx finite | lambda_xxx finite | lambda_xxy finite | M_xxx/abs | M_xxy/abs |
-|---:|---|---:|---:|---:|---:|---:|
-| 30 | True | 3.63934075e+01 | 7.30809938e-13 | -7.50212457e+01 | 2.07061645e+15 | 2.57191748e+01 |
-| 50 | False | 3.63242373e+01 | 7.68189976e-13 | -7.51138036e+01 | 1.97121675e+15 | 2.57023867e+01 |
-| 100 | False | 3.62754001e+01 | 6.88287578e-13 | -7.51588564e+01 | 2.20110209e+15 | 2.56974916e+01 |
-| 200 | False | 3.62528033e+01 | 6.19017693e-13 | -7.51710501e+01 | 2.44794379e+15 | 2.56980595e+01 |
+| J | cluster complete | complete cutoffs | lambda_x | lambda_xx finite | lambda_xxx finite | lambda_xxy finite | M_xxx/abs | M_xxy/abs |
+|---:|---|---|---:|---:|---:|---:|---:|---:|
+| 30 | True | 30/30 | -4.88786096e-13 | 3.63934075e+01 | 7.20151797e-13 | -7.50212457e+01 | 2.10126127e+15 | 2.57191748e+01 |
+| 50 | False | 49/51 | -4.88786096e-13 | 3.63242373e+01 | 7.68189976e-13 | -7.51138036e+01 | 1.97121675e+15 | 2.57023867e+01 |
+| 100 | False | 99/101 | -4.88786096e-13 | 3.62754001e+01 | 6.93616649e-13 | -7.51588564e+01 | 2.18419098e+15 | 2.56974916e+01 |
+| 200 | False | 199/203 | -4.88786096e-13 | 3.62550041e+01 | 6.35004396e-13 | -7.51707171e+01 | 2.38626478e+15 | 2.56977149e+01 |
 
 The finite `lambda_xxx` values are numerically close to zero at the `1e-6` level.
+
+Basis orthogonality diagnostics:
+
+| bc | J | mass max error | stiffness max error | stiffness relative error |
+|---|---:|---:|---:|---:|
+| D | 30 | 2.81996648e-14 | 3.76303433e-11 | 3.51585638e-14 |
+| D | 50 | 2.81996648e-14 | 7.68523023e-11 | 4.51552166e-14 |
+| D | 100 | 3.06421555e-14 | 1.74622983e-10 | 5.26577598e-14 |
+| D | 200 | 3.24185123e-14 | 3.36513040e-10 | 5.26894051e-14 |
+| N | 30 | 4.90533275e-14 | 3.71755959e-11 | 5.43270488e-14 |
+| N | 50 | 4.90533275e-14 | 5.83213478e-11 | 4.96107200e-14 |
+| N | 100 | 4.90533275e-14 | 1.06410880e-10 | 4.12564145e-14 |
+| N | 200 | 4.90533275e-14 | 2.27373675e-10 | 4.30523109e-14 |
+
+Shell-wise `lambda_xx` finite sum diagnostic:
+
+| shell | q | multiplicity | complete J | contribution | cumulative | lambda_xx finite | fraction of final cumulative |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 7 | 2 | 3 | 1.44874865e+01 | 1.44874865e+01 | 4.12088806e+01 | 8.53955140e-01 |
+| 2 | 12 | 1 | 4 | 2.25210728e-27 | 1.44874865e+01 | 4.12088806e+01 | 8.53955140e-01 |
+| 3 | 13 | 2 | 6 | 1.81731030e+00 | 1.63047968e+01 | 3.75742600e+01 | 9.61075272e-01 |
+| 4 | 19 | 2 | 8 | 2.34673334e-01 | 1.65394701e+01 | 3.71049133e+01 | 9.74907934e-01 |
+| 5 | 21 | 2 | 10 | 1.35543607e-27 | 1.65394701e+01 | 3.71049133e+01 | 9.74907934e-01 |
+| 6 | 27 | 1 | 11 | 1.90259250e-27 | 1.65394701e+01 | 3.71049133e+01 | 9.74907934e-01 |
+| 7 | 28 | 2 | 13 | 1.90178250e-01 | 1.67296483e+01 | 3.67245568e+01 | 9.86117863e-01 |
+| 8 | 31 | 2 | 15 | 4.22375699e-02 | 1.67718859e+01 | 3.66400817e+01 | 9.88607528e-01 |
+| 9 | 37 | 2 | 17 | 4.03410692e-02 | 1.68122270e+01 | 3.65593995e+01 | 9.90985405e-01 |
+| 10 | 39 | 2 | 19 | 1.11757096e-27 | 1.68122270e+01 | 3.65593995e+01 | 9.90985405e-01 |
+| 11 | 43 | 2 | 21 | 2.87474835e-03 | 1.68151017e+01 | 3.65536501e+01 | 9.91154856e-01 |
+| 12 | 48 | 1 | 22 | 1.87879601e-27 | 1.68151017e+01 | 3.65536501e+01 | 9.91154856e-01 |
+- Full shell table is written to `lambda_xx_shell_contributions.csv`.
 
 Cell-size bisection results:
 
@@ -82,22 +113,22 @@ Cell-size bisection results:
 | signed_xxy_first_order | 100 | tail_ignored | y_only | 0.00000000e+00 | 9.73544387e-02 | 9.73544387e-02 | 1.77635684e-15 | 1.46747705e-02 | exploratory_double |
 | signed_xxy_first_order | 100 | tail_ignored | omega_up_type | 2.00000000e-01 | 2.00000000e-02 | 2.00997512e-01 | 1.70755593e+00 | 1.88289159e+00 | exploratory_double |
 | signed_xxy_first_order | 100 | tail_ignored | square | 9.11533838e-02 | 9.11533838e-02 | 1.28910352e-01 | 5.32907052e-15 | 5.34785288e-02 | exploratory_double |
-| norm_bound | 200 | tail_ignored | x_only | 4.38185316e-03 | 0.00000000e+00 | 4.38185316e-03 | 1.48893763e-03 | 1.77635684e-15 | exploratory_double |
-| norm_bound | 200 | tail_ignored | y_only | 0.00000000e+00 | 3.33377416e-03 | 3.33377416e-03 | 1.55851962e-03 | 1.77635684e-15 | exploratory_double |
-| norm_bound | 200 | tail_ignored | omega_up_type | 3.87289495e-03 | 3.87289495e-04 | 3.89221126e-03 | 1.50687805e-03 | 1.77635684e-15 | exploratory_double |
-| norm_bound | 200 | tail_ignored | square | 1.89340597e-03 | 1.89340597e-03 | 2.67768040e-03 | 1.55208079e-03 | 1.77635684e-15 | exploratory_double |
-| norm_bound | 200 | dirichlet_parseval_tail | x_only | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94182383e+01 | -4.94198080e+01 | exploratory_double |
-| norm_bound | 200 | dirichlet_parseval_tail | y_only | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94182383e+01 | -4.94198080e+01 | exploratory_double |
-| norm_bound | 200 | dirichlet_parseval_tail | omega_up_type | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94182383e+01 | -4.94198080e+01 | exploratory_double |
-| norm_bound | 200 | dirichlet_parseval_tail | square | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94182383e+01 | -4.94198080e+01 | exploratory_double |
-| symmetry_first_order | 200 | tail_ignored | x_only | 2.00000000e-01 | 0.00000000e+00 | 2.00000000e-01 | 2.34003180e+00 | 2.50841147e+00 | exploratory_double |
-| symmetry_first_order | 200 | tail_ignored | y_only | 0.00000000e+00 | 3.33377416e-03 | 3.33377416e-03 | 1.55851962e-03 | 1.77635684e-15 | exploratory_double |
-| symmetry_first_order | 200 | tail_ignored | omega_up_type | 3.31685500e-02 | 3.31685500e-03 | 3.33339802e-02 | 1.77635684e-15 | 3.09572387e-03 | exploratory_double |
-| symmetry_first_order | 200 | tail_ignored | square | 3.33363924e-03 | 3.33363924e-03 | 4.71447783e-03 | 1.51151982e-03 | 1.77635684e-15 | exploratory_double |
-| signed_xxy_first_order | 200 | tail_ignored | x_only | 2.00000000e-01 | 0.00000000e+00 | 2.00000000e-01 | 2.34003180e+00 | 2.50841147e+00 | exploratory_double |
-| signed_xxy_first_order | 200 | tail_ignored | y_only | 0.00000000e+00 | 9.70647096e-02 | 9.70647096e-02 | 1.77635684e-15 | 1.45675772e-02 | exploratory_double |
-| signed_xxy_first_order | 200 | tail_ignored | omega_up_type | 2.00000000e-01 | 2.00000000e-02 | 2.00997512e-01 | 1.69799721e+00 | 1.87333287e+00 | exploratory_double |
-| signed_xxy_first_order | 200 | tail_ignored | square | 9.09024407e-02 | 9.09024407e-02 | 1.28555464e-01 | 1.77635684e-15 | 5.31491913e-02 | exploratory_double |
+| norm_bound | 200 | tail_ignored | x_only | 4.38339757e-03 | 0.00000000e+00 | 4.38339757e-03 | 1.48888071e-03 | 1.77635684e-15 | exploratory_double |
+| norm_bound | 200 | tail_ignored | y_only | 0.00000000e+00 | 3.33493661e-03 | 3.33493661e-03 | 1.55851022e-03 | 1.77635684e-15 | exploratory_double |
+| norm_bound | 200 | tail_ignored | omega_up_type | 3.87425831e-03 | 3.87425831e-04 | 3.89358141e-03 | 1.50683363e-03 | 1.77635684e-15 | exploratory_double |
+| norm_bound | 200 | tail_ignored | square | 1.89406929e-03 | 1.89406929e-03 | 2.67861848e-03 | 1.55206753e-03 | 3.55271368e-15 | exploratory_double |
+| norm_bound | 200 | dirichlet_parseval_tail | x_only | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94451199e+01 | -4.94466896e+01 | exploratory_double |
+| norm_bound | 200 | dirichlet_parseval_tail | y_only | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94451199e+01 | -4.94466896e+01 | exploratory_double |
+| norm_bound | 200 | dirichlet_parseval_tail | omega_up_type | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94451199e+01 | -4.94466896e+01 | exploratory_double |
+| norm_bound | 200 | dirichlet_parseval_tail | square | 0.00000000e+00 | 0.00000000e+00 | 0.00000000e+00 | -4.94451199e+01 | -4.94466896e+01 | exploratory_double |
+| symmetry_first_order | 200 | tail_ignored | x_only | 2.00000000e-01 | 0.00000000e+00 | 2.00000000e-01 | 2.34098477e+00 | 2.50936444e+00 | exploratory_double |
+| symmetry_first_order | 200 | tail_ignored | y_only | 0.00000000e+00 | 3.33493661e-03 | 3.33493661e-03 | 1.55851022e-03 | 1.77635684e-15 | exploratory_double |
+| symmetry_first_order | 200 | tail_ignored | omega_up_type | 3.31800406e-02 | 3.31800406e-03 | 3.33455282e-02 | 1.77635684e-15 | 3.09896892e-03 | exploratory_double |
+| symmetry_first_order | 200 | tail_ignored | square | 3.33480159e-03 | 3.33480159e-03 | 4.71612164e-03 | 1.51147755e-03 | 1.77635684e-15 | exploratory_double |
+| signed_xxy_first_order | 200 | tail_ignored | x_only | 2.00000000e-01 | 0.00000000e+00 | 2.00000000e-01 | 2.34098477e+00 | 2.50936444e+00 | exploratory_double |
+| signed_xxy_first_order | 200 | tail_ignored | y_only | 0.00000000e+00 | 9.70929376e-02 | 9.70929376e-02 | 5.32907052e-15 | 1.45780025e-02 | exploratory_double |
+| signed_xxy_first_order | 200 | tail_ignored | omega_up_type | 2.00000000e-01 | 2.00000000e-02 | 2.00997512e-01 | 1.69892817e+00 | 1.87426383e+00 | exploratory_double |
+| signed_xxy_first_order | 200 | tail_ignored | square | 9.09268955e-02 | 9.09268955e-02 | 1.28590049e-01 | 1.77635684e-15 | 5.31812353e-02 | exploratory_double |
 
 Most important Omega_up-type result:
 
@@ -128,12 +159,12 @@ Target diagnostic at `rx=1e-2`, `ry=1e-3`:
 | norm_bound | 100 | dirichlet_parseval_tail | -6.39498026e+01 | -6.39509510e+01 | False |
 | symmetry_first_order | 100 | tail_ignored | 2.02066931e+00 | 2.01952092e+00 | True |
 | signed_xxy_first_order | 100 | tail_ignored | 2.85602178e+00 | 2.85487339e+00 | True |
-| norm_bound | 200 | tail_ignored | -4.54321178e+00 | -4.54436017e+00 | False |
-| norm_bound | 200 | dirichlet_parseval_tail | -6.34070362e+01 | -6.34081846e+01 | False |
-| symmetry_first_order | 200 | tail_ignored | 2.01074193e+00 | 2.00959354e+00 | True |
-| signed_xxy_first_order | 200 | tail_ignored | 2.84624840e+00 | 2.84510000e+00 | True |
+| norm_bound | 200 | tail_ignored | -4.54210707e+00 | -4.54325546e+00 | False |
+| norm_bound | 200 | dirichlet_parseval_tail | -6.34407396e+01 | -6.34418880e+01 | False |
+| symmetry_first_order | 200 | tail_ignored | 2.01170871e+00 | 2.01056032e+00 | True |
+| signed_xxy_first_order | 200 | tail_ignored | 2.84720026e+00 | 2.84605187e+00 | True |
 
 Parseval decomposition diagnostic:
 
-- smallest absolute combined residual in the grid is `2.09969695e+00` at `J=200`, `M=200`.
+- smallest absolute combined residual in the grid is `2.11038277e+00` at `J=200`, `M=200`.
 - Full values are written to `parseval_decomposition.csv`.

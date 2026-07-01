@@ -526,6 +526,134 @@ def cluster_complete(modes: list[Mode], J: int) -> bool:
     return J == len(modes) or modes[J - 1].q != modes[J].q
 
 
+def neighboring_complete_cutoffs(modes: list[Mode], J: int) -> tuple[int, int]:
+    """Nearest complete 1-based cluster cutoffs around the requested cutoff J."""
+    cutoffs = complete_cluster_indices(modes, len(modes))
+    prev_complete = max(c for c in cutoffs if c <= J)
+    next_complete = min(c for c in cutoffs if c >= J)
+    return prev_complete, next_complete
+
+
+def lambda_xx_shell_contribution_rows(
+    modes_d: list[Mode],
+    gx_d: np.ndarray,
+    gy_d: np.ndarray,
+    weights: np.ndarray,
+    max_j: int,
+) -> list[dict[str, object]]:
+    """Shell-wise finite sum for lambda_xx at the equilateral triangle.
+
+    Paper formula:
+        lambda_xx = (P_xx grad phi_1, grad phi_1)
+                    - 2 sum_{j>=2} B_j^2/(lambda_j-lambda_1).
+
+    Equal-eigenvalue shells are summed together because individual basis
+    coefficients inside a repeated eigenspace are basis-dependent.
+    """
+    mats = p_derivative_matrices()
+    lambdas = np.array([mode.eigenvalue for mode in modes_d])
+    lambda1 = lambdas[0]
+    phi1_x = gx_d[:, 0]
+    phi1_y = gy_d[:, 0]
+    g_x, g_y = apply_matrix_to_gradient(mats["x"], phi1_x, phi1_y)
+    b_x = gradient_pairing(g_x, g_y, gx_d, gy_d, weights)
+    axx_x, axx_y = apply_matrix_to_gradient(mats["xx"], phi1_x, phi1_y)
+    a_xx = float(np.sum(weights * (axx_x * phi1_x + axx_y * phi1_y)))
+
+    rows: list[dict[str, object]] = []
+    cumulative = 0.0
+    cumulative_parseval = 0.0
+    shell_index = 0
+    start = 1
+    while start < len(modes_d):
+        q = modes_d[start].q
+        end = start + 1
+        while end < len(modes_d) and modes_d[end].q == q:
+            end += 1
+        if start >= max_j:
+            break
+        shell_index += 1
+        shell_lambda = lambdas[start]
+        shell_b_sq = float(np.sum(b_x[start:end] ** 2))
+        contribution = shell_b_sq / (shell_lambda - lambda1)
+        parseval_contribution = shell_b_sq / shell_lambda
+        cumulative += contribution
+        cumulative_parseval += parseval_contribution
+        rows.append(
+            {
+                "shell_index": shell_index,
+                "q": q,
+                "eigenvalue": shell_lambda,
+                "multiplicity": end - start,
+                "mode_start": start + 1,
+                "mode_end": end,
+                "complete_J": end,
+                "requested_max_J_cuts_shell": start < max_j < end,
+                "B_sq_shell": shell_b_sq,
+                "contribution": contribution,
+                "cumulative": cumulative,
+                "lambda_xx_finite_shell": a_xx - 2.0 * cumulative,
+                "parseval_contribution": parseval_contribution,
+                "parseval_cumulative": cumulative_parseval,
+                "rigorous_flag": "exploratory_double",
+            }
+        )
+        start = end
+
+    final_cumulative = rows[-1]["cumulative"] if rows else 0.0
+    for row in rows:
+        row["fraction_of_last_cumulative"] = float(row["cumulative"]) / final_cumulative if final_cumulative else float("nan")
+    return rows
+
+
+def basis_orthogonality_rows(
+    j_list: list[int],
+    bc: str,
+    modes: list[Mode],
+    values: np.ndarray,
+    gx: np.ndarray,
+    gy: np.ndarray,
+    weights: np.ndarray,
+) -> list[dict[str, object]]:
+    """Check L2 orthonormality and stiffness diagonality for analytic modes."""
+    max_j = max(j_list)
+    lambdas = np.array([mode.eigenvalue for mode in modes[:max_j]])
+    values_j = values[:, :max_j]
+    gx_j = gx[:, :max_j]
+    gy_j = gy[:, :max_j]
+    mass = values_j.T @ (weights[:, None] * values_j)
+    stiffness = gx_j.T @ (weights[:, None] * gx_j) + gy_j.T @ (weights[:, None] * gy_j)
+    eye = np.eye(max_j)
+    lambda_diag = np.diag(lambdas)
+    offdiag_mask = ~np.eye(max_j, dtype=bool)
+
+    rows: list[dict[str, object]] = []
+    for J in j_list:
+        mass_j = mass[:J, :J]
+        stiffness_j = stiffness[:J, :J]
+        mass_error = mass_j - eye[:J, :J]
+        stiffness_error = stiffness_j - lambda_diag[:J, :J]
+        offdiag_j = offdiag_mask[:J, :J]
+        rows.append(
+            {
+                "bc": bc,
+                "J": J,
+                "cluster_complete": cluster_complete(modes, J),
+                "mass_max_abs_error": float(np.max(np.abs(mass_error))),
+                "mass_diag_max_abs_error": float(np.max(np.abs(np.diag(mass_j) - 1.0))),
+                "mass_offdiag_max_abs": float(np.max(np.abs(mass_j[offdiag_j]))) if J > 1 else 0.0,
+                "stiffness_max_abs_error": float(np.max(np.abs(stiffness_error))),
+                "stiffness_relative_max_error": float(np.max(np.abs(stiffness_error)) / np.max(lambdas[:J])),
+                "stiffness_diag_relative_max_error": float(
+                    np.max(np.abs((np.diag(stiffness_j) - lambdas[:J]) / lambdas[:J]))
+                ),
+                "stiffness_offdiag_max_abs": float(np.max(np.abs(stiffness_j[offdiag_j]))) if J > 1 else 0.0,
+                "rigorous_flag": "exploratory_double",
+            }
+        )
+    return rows
+
+
 def parseval_decomposition_rows(
     j_list: list[int],
     modes_d: list[Mode],
@@ -586,12 +714,16 @@ def write_outputs(
     diagnostics: list[dict[str, object]],
     third_rows: list[dict[str, object]],
     parseval_rows: list[dict[str, object]],
+    shell_rows: list[dict[str, object]],
+    orthogonality_rows: list[dict[str, object]],
 ) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     max_csv = outdir / "max_cell_sizes.csv"
     diag_csv = outdir / "diagnostics.csv"
     third_csv = outdir / "third_derivative_diagnostics.csv"
     parseval_csv = outdir / "parseval_decomposition.csv"
+    shell_csv = outdir / "lambda_xx_shell_contributions.csv"
+    orthogonality_csv = outdir / "basis_orthogonality_diagnostics.csv"
     fields = [
         "model",
         "J",
@@ -618,6 +750,10 @@ def write_outputs(
     third_fields = [
         "J",
         "cluster_complete",
+        "prev_complete_J",
+        "next_complete_J",
+        "lambda_x_finite",
+        "lambda_y_finite",
         "lambda_xx_finite",
         "lambda_xxx_finite",
         "lambda_xxy_finite",
@@ -642,6 +778,37 @@ def write_outputs(
         "combined_fraction",
         "rigorous_flag",
     ]
+    shell_fields = [
+        "shell_index",
+        "q",
+        "eigenvalue",
+        "multiplicity",
+        "mode_start",
+        "mode_end",
+        "complete_J",
+        "requested_max_J_cuts_shell",
+        "B_sq_shell",
+        "contribution",
+        "cumulative",
+        "fraction_of_last_cumulative",
+        "lambda_xx_finite_shell",
+        "parseval_contribution",
+        "parseval_cumulative",
+        "rigorous_flag",
+    ]
+    orthogonality_fields = [
+        "bc",
+        "J",
+        "cluster_complete",
+        "mass_max_abs_error",
+        "mass_diag_max_abs_error",
+        "mass_offdiag_max_abs",
+        "stiffness_max_abs_error",
+        "stiffness_relative_max_error",
+        "stiffness_diag_relative_max_error",
+        "stiffness_offdiag_max_abs",
+        "rigorous_flag",
+    ]
     with max_csv.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -658,6 +825,14 @@ def write_outputs(
         writer = csv.DictWriter(f, fieldnames=parseval_fields)
         writer.writeheader()
         writer.writerows(parseval_rows)
+    with shell_csv.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=shell_fields)
+        writer.writeheader()
+        writer.writerows(shell_rows)
+    with orthogonality_csv.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=orthogonality_fields)
+        writer.writeheader()
+        writer.writerows(orthogonality_rows)
 
     summary = outdir / "summary.md"
     with summary.open("w") as f:
@@ -675,13 +850,15 @@ def write_outputs(
         f.write("- `signed_xxy_first_order`: finite `lambda_xx(0,0)` plus the signed affine `lambda_xxy t` minimum on `t in [-ry,0]`.\n")
         f.write("- `dirichlet_parseval_tail`: the intentionally crude Dirichlet-only Parseval tail diagnostic; it is not used by the two symmetry-improved models.\n\n")
 
-        f.write("Finite third derivative diagnostics:\n\n")
-        f.write("| J | cluster complete | lambda_xx finite | lambda_xxx finite | lambda_xxy finite | M_xxx/abs | M_xxy/abs |\n")
-        f.write("|---:|---|---:|---:|---:|---:|---:|\n")
+        f.write("Finite signed derivative diagnostics:\n\n")
+        f.write("| J | cluster complete | complete cutoffs | lambda_x | lambda_xx finite | lambda_xxx finite | lambda_xxy finite | M_xxx/abs | M_xxy/abs |\n")
+        f.write("|---:|---|---|---:|---:|---:|---:|---:|---:|\n")
         for row in third_rows:
             f.write(
                 f"| {row['J']} | {row['cluster_complete']} | "
-                f"{float(row['lambda_xx_finite']):.8e} | {float(row['lambda_xxx_finite']):.8e} | "
+                f"{row['prev_complete_J']}/{row['next_complete_J']} | "
+                f"{float(row['lambda_x_finite']):.8e} | {float(row['lambda_xx_finite']):.8e} | "
+                f"{float(row['lambda_xxx_finite']):.8e} | "
                 f"{float(row['lambda_xxy_finite']):.8e} | {float(row['ratio_xxx']):.8e} | "
                 f"{float(row['ratio_xxy']):.8e} |\n"
             )
@@ -690,6 +867,30 @@ def write_outputs(
             f.write("\nWarning: `lambda_xxx_finite` is not close to zero for at least one requested J. This can happen if the requested truncation cuts an equal-eigenvalue cluster, but it should be treated as an implementation/integration diagnostic.\n")
         else:
             f.write("\nThe finite `lambda_xxx` values are numerically close to zero at the `1e-6` level.\n")
+
+        if orthogonality_rows:
+            f.write("\nBasis orthogonality diagnostics:\n\n")
+            f.write("| bc | J | mass max error | stiffness max error | stiffness relative error |\n")
+            f.write("|---|---:|---:|---:|---:|\n")
+            for row in orthogonality_rows:
+                f.write(
+                    f"| {row['bc']} | {row['J']} | {float(row['mass_max_abs_error']):.8e} | "
+                    f"{float(row['stiffness_max_abs_error']):.8e} | "
+                    f"{float(row['stiffness_relative_max_error']):.8e} |\n"
+                )
+
+        if shell_rows:
+            f.write("\nShell-wise `lambda_xx` finite sum diagnostic:\n\n")
+            f.write("| shell | q | multiplicity | complete J | contribution | cumulative | lambda_xx finite | fraction of final cumulative |\n")
+            f.write("|---:|---:|---:|---:|---:|---:|---:|---:|\n")
+            for row in shell_rows[:12]:
+                f.write(
+                    f"| {row['shell_index']} | {row['q']} | {row['multiplicity']} | {row['complete_J']} | "
+                    f"{float(row['contribution']):.8e} | {float(row['cumulative']):.8e} | "
+                    f"{float(row['lambda_xx_finite_shell']):.8e} | "
+                    f"{float(row['fraction_of_last_cumulative']):.8e} |\n"
+                )
+            f.write("- Full shell table is written to `lambda_xx_shell_contributions.csv`.\n")
         f.write("\nCell-size bisection results:\n\n")
         f.write("| model | J | tail mode | cell shape | max rx | max ry | distance | Jxx1 lower | Jxx2 lower | rigorous flag |\n")
         f.write("|---|---:|---|---|---:|---:|---:|---:|---:|---|\n")
@@ -761,12 +962,12 @@ def main() -> None:
     j_list = parse_j_list(args.J_list)
     tail_modes = [x.strip() for x in args.tail_modes.split(",") if x.strip()]
     max_j = max(j_list)
-    needed_modes = max_j + 2
+    needed_modes = max_j + 128
     x, y, weights = triangle_quadrature(args.nq)
     modes_d = enumerate_equilateral_modes("D", needed_modes)
-    _, gx_d, gy_d = orthonormalize_by_clusters(modes_d, x, y, weights)
-    modes_n = enumerate_equilateral_modes("N", max_j)
-    _, gx_n, gy_n = orthonormalize_by_clusters(modes_n, x, y, weights)
+    values_d, gx_d, gy_d = orthonormalize_by_clusters(modes_d, x, y, weights)
+    modes_n = enumerate_equilateral_modes("N", max_j + 128)
+    values_n, gx_n, gy_n = orthonormalize_by_clusters(modes_n, x, y, weights)
 
     rows: list[dict[str, object]] = []
     diagnostics: list[dict[str, object]] = []
@@ -825,10 +1026,15 @@ def main() -> None:
             )
 
         finite_probe = probes["tail_ignored"]
+        prev_complete, next_complete = neighboring_complete_cutoffs(modes_d, j)
         third_rows.append(
             {
                 "J": j,
                 "cluster_complete": cluster_complete(modes_d, j),
+                "prev_complete_J": prev_complete,
+                "next_complete_J": next_complete,
+                "lambda_x_finite": finite_probe.lambda_x,
+                "lambda_y_finite": finite_probe.lambda_y,
                 "lambda_xx_finite": finite_probe.lambda_xx_finite,
                 "lambda_xxx_finite": finite_probe.lambda_xxx_finite,
                 "lambda_xxy_finite": finite_probe.lambda_xxy_finite,
@@ -859,13 +1065,20 @@ def main() -> None:
                 diagnostics.append(output_row(model, probe, label, rx, ry, values))
 
     parseval_rows = parseval_decomposition_rows(j_list, modes_d, gx_d, gy_d, modes_n, gx_n, gy_n, weights)
+    shell_rows = lambda_xx_shell_contribution_rows(modes_d, gx_d, gy_d, weights, max_j)
+    orthogonality_rows = (
+        basis_orthogonality_rows(j_list, "D", modes_d, values_d, gx_d, gy_d, weights)
+        + basis_orthogonality_rows(j_list, "N", modes_n, values_n, gx_n, gy_n, weights)
+    )
 
-    write_outputs(Path(args.outdir), rows, diagnostics, third_rows, parseval_rows)
+    write_outputs(Path(args.outdir), rows, diagnostics, third_rows, parseval_rows, shell_rows, orthogonality_rows)
     print(f"Wrote {args.outdir}/summary.md")
     print(f"Wrote {args.outdir}/max_cell_sizes.csv")
     print(f"Wrote {args.outdir}/diagnostics.csv")
     print(f"Wrote {args.outdir}/third_derivative_diagnostics.csv")
     print(f"Wrote {args.outdir}/parseval_decomposition.csv")
+    print(f"Wrote {args.outdir}/lambda_xx_shell_contributions.csv")
+    print(f"Wrote {args.outdir}/basis_orthogonality_diagnostics.csv")
 
 
 if __name__ == "__main__":
