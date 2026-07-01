@@ -561,7 +561,7 @@ def cluster_complete(modes: list[Mode], J: int) -> bool:
 def neighboring_complete_cutoffs(modes: list[Mode], J: int) -> tuple[int, int]:
     """Nearest complete 1-based cluster cutoffs around the requested cutoff J."""
     cutoffs = complete_cluster_indices(modes, len(modes))
-    prev_complete = max(c for c in cutoffs if c <= J)
+    prev_complete = max((c for c in cutoffs if c <= J), default=cutoffs[0])
     next_complete = min(c for c in cutoffs if c >= J)
     return prev_complete, next_complete
 
@@ -696,6 +696,8 @@ def neumann_corrected_tail_rows(
                 {
                     "J": J,
                     "M": M,
+                    "J_cluster_complete": cluster_complete(modes_d, J),
+                    "M_cluster_complete": cluster_complete(modes_n, M),
                     "lambda_next": lambda_next,
                     "lambda1": lambda1,
                     "alpha": alpha,
@@ -844,6 +846,7 @@ def write_outputs(
         "model",
         "J",
         "M",
+        "M_cluster_complete",
         "tail_mode",
         "cell_shape",
         "rx",
@@ -932,6 +935,8 @@ def write_outputs(
     neumann_tail_fields = [
         "J",
         "M",
+        "J_cluster_complete",
+        "M_cluster_complete",
         "lambda_next",
         "lambda1",
         "alpha",
@@ -1049,12 +1054,16 @@ def write_outputs(
         if neumann_tail_rows:
             best_tail = min(neumann_tail_rows, key=lambda r: float(r["neumann_corrected_tail_energy"]))
             f.write("\nNeumann-corrected tail diagnostic:\n\n")
-            f.write("| J | M | old tail energy | corrected tail energy | ratio | old lambda_xx lower | corrected lambda_xx lower |\n")
-            f.write("|---:|---:|---:|---:|---:|---:|---:|\n")
+            f.write("| J | M | M complete | old tail energy | corrected tail energy | ratio | old lambda_xx lower | corrected lambda_xx lower |\n")
+            f.write("|---:|---:|---|---:|---:|---:|---:|---:|\n")
+            show_all_tail_rows = len(neumann_tail_rows) <= 50
             for row in neumann_tail_rows:
-                if row["J"] in {30, 51, 101, 203} and row["M"] in {31, 50, 101, 200}:
+                if show_all_tail_rows or (
+                    row["J"] in {30, 51, 101, 203} and row["M"] in {31, 50, 101, 200}
+                ):
                     f.write(
-                        f"| {row['J']} | {row['M']} | {float(row['old_dirichlet_tail_energy']):.8e} | "
+                        f"| {row['J']} | {row['M']} | {row['M_cluster_complete']} | "
+                        f"{float(row['old_dirichlet_tail_energy']):.8e} | "
                         f"{float(row['neumann_corrected_tail_energy']):.8e} | {float(row['tail_energy_ratio']):.8e} | "
                         f"{float(row['lambda_xx_old_tail_lower']):.8e} | "
                         f"{float(row['lambda_xx_neumann_tail_lower']):.8e} |\n"
@@ -1122,6 +1131,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--J-list", default="30,50,100,200", help="comma-separated truncation levels")
     parser.add_argument(
+        "--M-list",
+        default="",
+        help="optional comma-separated Neumann truncation levels; if omitted, nearby complete cutoffs are used",
+    )
+    parser.add_argument(
         "--tail-modes",
         default="tail_ignored,dirichlet_parseval_tail,neumann_corrected_tail",
         help="comma-separated tail modes: tail_ignored, dirichlet_parseval_tail, neumann_corrected_tail",
@@ -1142,7 +1156,7 @@ def main() -> None:
     modes_n = enumerate_equilateral_modes("N", needed_modes)
     values_n, gx_n, gy_n = orthonormalize_by_clusters(modes_n, x, y, weights)
     j_list = complete_cutoff_candidates(modes_d, requested_j_list)
-    m_list = complete_cutoff_candidates(modes_n, requested_j_list)
+    m_list = sorted(set(parse_j_list(args.M_list))) if args.M_list else complete_cutoff_candidates(modes_n, requested_j_list)
     max_j = max(j_list)
 
     rows: list[dict[str, object]] = []
@@ -1166,6 +1180,7 @@ def main() -> None:
             "model": model,
             "J": probe.J,
             "M": probe.M if probe.M is not None else "",
+            "M_cluster_complete": cluster_complete(modes_n, probe.M) if probe.M is not None else "",
             "tail_mode": probe.tail_mode,
             "cell_shape": cell_shape,
             "rx": rx,
