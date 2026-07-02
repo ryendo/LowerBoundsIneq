@@ -1,0 +1,88 @@
+{
+  "connection_margin": 0.0005803641043453239,
+  "eps_up": 0.122,
+  "omega_mid_geometry": {
+    "cell_count": 188623,
+    "cell_file": "inputs/cell_def.csv",
+    "closest_corner": {
+      "cell_id": "139747",
+      "distance_to_p0": 0.12141963589565467,
+      "theta": 0.97766,
+      "x": 0.5019549999999999,
+      "y": 0.7446215078171619
+    },
+    "max_x": 1.0,
+    "max_y": 0.7991532066572454,
+    "min_distance_to_p0": 0.12141963589565467,
+    "min_x": 0.5,
+    "min_y": 0.031969339076339046
+  },
+  "omega_mid_results": {
+    "J1": {
+      "max_J_lower": Infinity,
+      "min_J_lower": 2.5985142749e-07,
+      "path": "/private/tmp/lowerbounds-push-main/results/J1_OmegaMid.csv",
+      "row_count": 188623,
+      "unique_cell_count": 188623,
+      "verified_latest_cells": 188623,
+      "verified_rows": 188623
+    },
+    "J2": {
+      "max_J_lower": Infinity,
+      "min_J_lower": 9.5665980076e-05,
+      "path": "/private/tmp/lowerbounds-push-main/results/J2_OmegaMid.csv",
+      "row_count": 188623,
+      "unique_cell_count": 188623,
+      "verified_latest_cells": 188623,
+      "verified_rows": 188623
+    }
+  },
+  "omega_up_fem": {
+    "J1_step_1_2": {
+      "finite_max_L_lower": 13.911299100878576,
+      "finite_min_L_lower": 10.651413462612492,
+      "inf_rows": 1205,
+      "ok_rows": 2000,
+      "path": "/private/tmp/lowerbounds-push-main/results/J1_OmegaUp_step1_2_cells.csv",
+      "row_count": 2000
+    },
+    "J1_step_1_3": {
+      "finite_max_L_lower": 5.446063226453415,
+      "finite_min_L_lower": 2.960939697594265,
+      "inf_rows": 0,
+      "ok_rows": 200,
+      "path": "/private/tmp/lowerbounds-push-main/results/J1_OmegaUp_step1_3_axis.csv",
+      "row_count": 200
+    },
+    "J2_step_1_2": {
+      "finite_max_L_lower": 14.009995121996504,
+      "finite_min_L_lower": 10.662262902646091,
+      "inf_rows": 1205,
+      "ok_rows": 2000,
+      "path": "/private/tmp/lowerbounds-push-main/results/J2_OmegaUp_step1_2_cells.csv",
+      "row_count": 2000
+    },
+    "J2_step_1_3": {
+      "finite_max_L_lower": 5.5101267995304255,
+      "finite_min_L_lower": 2.9627570954273406,
+      "inf_rows": 0,
+      "ok_rows": 200,
+      "path": "/private/tmp/lowerbounds-push-main/results/J2_OmegaUp_step1_3_axis.csv",
+      "row_count": 200
+    }
+  },
+  "omega_up_taylor": {
+    "directory": "/private/tmp/lowerbounds-push-main/results/omega_up_taylor_descent_probe_hpc_20260703_063217",
+    "old_eps_0p122": {
+      "lambda_xx0": 36.2477175624982,
+      "min_J1": 1.2401700045442645,
+      "min_J2": 1.5861201187179468,
+      "min_direct_J1": 2.71566482778268,
+      "min_direct_residual": 0.0,
+      "rx": 0.244,
+      "ry": 0.122,
+      "signed_y_slope": 75.17912990479658
+    },
+    "rigor_status": "exploratory_double"
+  }
+}

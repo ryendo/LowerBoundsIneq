@@ -5,25 +5,25 @@
 - Cell definition: `inputs/cell_def.csv`
 
 ## J1 (Laugesen–Siudeja type)
-- Total cells: **95,226**
-- Verified:    **95,226**  (100.000%)
+- Total cells: **188,623**
+- Verified:    **188,623**  (100.000%)
 - `J_lower` statistics (full-precision values from the source CSV):
-  - **min**:    `6.85629379049146337e-07`
-  - **median**: `8.00552190310356693e+00`
-  - **max**:    `2.62575092449887552e+03`
-  - 1%  percentile: `1.11042730787147548e-03`
-  - 10% percentile: `7.46011083705688804e-03`
-  - 90% percentile: `9.14085951114024731e+00`
-  - 99% percentile: `9.43050668763926225e+00`
+  - **min**:    `2.59851427490000013e-07`
+  - **median**: `1.11128998239999992e-02`
+  - **max**:    `1.34388526850000005e+02`
+  - 1%  percentile: `3.29079454319999994e-04`
+  - 10% percentile: `2.41518214299999995e-03`
+  - 90% percentile: `1.36115692340000011e-01`
+  - 99% percentile: `1.99749927050000009e+00`
 
 ## J2 (Cheeger type)
-- Total cells: **95,026**
-- Verified:    **95,026**  (100.000%)
+- Total cells: **188,623**
+- Verified:    **188,623**  (100.000%)
 - `J_lower` statistics (full-precision values from the source CSV):
-  - **min**:    `1.54987819030338869e-04`
-  - **median**: `3.06709691515887783e+01`
-  - **max**:    `2.63336932485756779e+03`
-  - 1%  percentile: `1.46113654100687995e-03`
-  - 10% percentile: `7.88580715524744846e-03`
-  - 90% percentile: `3.36799780528530448e+01`
-  - 99% percentile: `3.59675190876257034e+01`
+  - **min**:    `9.56659800759999978e-05`
+  - **median**: `1.17951505089999992e-02`
+  - **max**:    `1.59276491880000009e+02`
+  - 1%  percentile: `7.78627794400000043e-04`
+  - 10% percentile: `2.81360683210000019e-03`
+  - 90% percentile: `3.84218018019999996e-01`
+  - 99% percentile: `1.97765356750000016e+01`

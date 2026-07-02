@@ -48,6 +48,7 @@ LowerBoundsIneq/
 ├── results/                        ← final verification outputs
 │   ├── J1_OmegaMid.csv             ← one row per cell with J1_lower
 │   ├── J2_OmegaMid.csv             ← one row per cell with J2_lower
+│   ├── omega_connection_summary.md ← Omega_mid/Omega_up interface audit
 │   ├── verification_summary.md     ← human-readable summary
 │   └── verification_summary.json
 ├── src/
@@ -58,7 +59,7 @@ LowerBoundsIneq/
 │   ├── interval/                   ← INTLAB wrappers
 │   └── lib/                        ← bundled external FEM/eigensolver libs
 ├── Intlab_V12/                     ← bundled INTLAB 12 (run once to regenerate its .mat)
-├── scripts_run/                    ← parallel driver + helpers
+├── scripts_run/                    ← parallel driver + helper diagnostics
 ├── tests/                          ← unit-level tests
 └── tools/                          ← miscellaneous developer tools
 ```
@@ -166,6 +167,14 @@ J1,2,1,7.09708917028804009e+00,"ok","",2026-04-19 21:29:29
 ### `results/verification_summary.md`
 
 Human-readable digest of the verification statistics; see the file itself for the current numbers.
+
+### `results/omega_connection_summary.md`
+
+liulab HPC digest checking the geometric overlap between the certified
+`\Omega_{\mathrm{mid}}` cells and the certified `\Omega_{\mathrm{up}}`
+calculation.  It also records the exploratory signed Taylor diagnostic from
+`results/omega_up_taylor_descent_probe_hpc_*`; those Taylor rows are marked
+`exploratory_double` and are not used as a proof certificate.
 
 ---
 
