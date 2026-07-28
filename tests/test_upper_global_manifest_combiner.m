@@ -6,7 +6,12 @@ if exist('OCTAVE_VERSION','builtin')
         'skipped in Octave (MATLAB SHA-256 runtime required)\n']);
     return;
 end
-rounding_cleanup = local_round_to_nearest_guard(); %#ok<NASGU>
+rounding_cleanup = []; %#ok<NASGU>
+if exist('getround','file') == 2 || exist('getround','file') == 3
+    old_round = getround;
+    setround(0);
+    rounding_cleanup = onCleanup(@() setround(old_round)); %#ok<NASGU>
+end
 this_file = mfilename('fullpath');
 project_root = fileparts(fileparts(this_file));
 addpath(fullfile(project_root,'scripts_run'),'-begin');
@@ -323,15 +328,5 @@ end
 function local_remove_directory(directory)
 if exist(directory,'dir')
     rmdir(directory,'s');
-end
-end
-
-
-function cleanup = local_round_to_nearest_guard()
-cleanup = [];
-if exist('getround','file') == 2 || exist('getround','file') == 3
-    old_round = getround;
-    setround(0);
-    cleanup = onCleanup(@() setround(old_round));
 end
 end
