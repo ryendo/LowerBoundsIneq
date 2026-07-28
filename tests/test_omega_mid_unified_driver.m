@@ -194,7 +194,8 @@ for cell_id = [138748,152387]
     shift_method = char(J1.LG_shift_method(k));
     assert(strcmp(shift_method,'CR-Liu'));
     assert(double(J1.LG_fallback_used(k)) == 0);
-    assert(strlength(string(J1.LG_fallback_reason(k))) == 0);
+    fallback_reason = string(J1.LG_fallback_reason(k));
+    assert(ismissing(fallback_reason) || strlength(fallback_reason) == 0);
 end
 
 k_cr = find(double(J1.cell_id) == 11731,1);
