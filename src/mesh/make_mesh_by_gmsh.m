@@ -28,9 +28,15 @@ function mesh = make_mesh_by_gmsh(a, b, h, block_size, verbose, tag)
     if nargin < 5 || isempty(verbose), verbose = false; end
     if nargin < 4, block_size = []; end %#ok<NASGU>  % unused; kept for API stability
 
-    persistent cache
+    persistent cache cache_order
     if isempty(cache)
         cache = containers.Map('KeyType','char','ValueType','any');
+        cache_order = {};
+    end
+    max_cache_entries = 8;
+    configured_limit = str2double(getenv('LOWERBOUNDS_MESH_CACHE_SIZE'));
+    if isfinite(configured_limit) && configured_limit >= 1
+        max_cache_entries = floor(configured_limit);
     end
 
     hmid = I_mid(h);
@@ -45,7 +51,12 @@ function mesh = make_mesh_by_gmsh(a, b, h, block_size, verbose, tag)
     else
         st = struct('ref_mesh', [], 'a0', amid, 'b0', bmid);
         st.ref_mesh = make_mesh_by_gmsh_ref(I_intval(amid), I_intval(bmid), h);
+        while numel(cache_order) >= max_cache_entries
+            remove(cache,cache_order{1});
+            cache_order(1) = [];
+        end
         cache(key) = st;
+        cache_order{end+1} = key;
         if verbose
             fprintf('[mesh-cache] new ref mesh key=%s  a0=%.17g  b0=%.17g\n', ...
                 key, amid, bmid);

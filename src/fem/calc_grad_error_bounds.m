@@ -20,6 +20,7 @@ function [Est_grad, delta_a_sq, delta_b_sq, info] = calc_grad_error_bounds( ...
     info.ok     = false(num_clusters,1);
     info.reason = repmat({''}, num_clusters,1);
     info.rho    = I_intval(NaN(num_clusters,1));
+    info.lambda_Nkh = I_intval(NaN(num_clusters,1));
 
     for k = 1:num_clusters
         idx_k = clusters{k};
@@ -48,8 +49,13 @@ function [Est_grad, delta_a_sq, delta_b_sq, info] = calc_grad_error_bounds( ...
             continue;
         end
 
-        % λ_{N_k,h} := max over E_k^h Rayleigh quotient.
-        lamNkh = max(I_sup(lam_h(idx_k)));
+        % λ_{N_k,h} is the maximum Rayleigh quotient on the whole
+        % cluster trial subspace, not the maximum of the individual
+        % column quotients.  Cross terms matter whenever dim(E_k^h)>1.
+        ritz_cluster = verified_ritz_enclosures( ...
+            uh_list(:,idx_k),A,B,length(idx_k));
+        lamNkh = I_intval(I_sup(ritz_cluster(end)));
+        info.lambda_Nkh(k) = lamNkh;
         if ~(I_intval(0) < lamNkh)
             info.reason{k} = 'Cannot certify λ_{N_k,h} > 0 -> Inf.';
             continue;

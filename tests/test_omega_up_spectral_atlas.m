@@ -1,0 +1,133 @@
+function test_omega_up_spectral_atlas()
+%TEST_OMEGA_UP_SPECTRAL_ATLAS  Structural and hash fail-closed checks.
+
+this_file = mfilename('fullpath');
+project_root = fileparts(fileparts(this_file));
+addpath(fullfile(project_root,'src','interval'),'-begin');
+addpath(fullfile(project_root,'src','algorithms'),'-begin');
+addpath(fullfile(project_root,'scripts_run'),'-begin');
+
+global INTERVAL_MODE
+rigorous = logical(INTERVAL_MODE);
+cert1 = local_certificate(0.5,0.8,1,rigorous);
+cert2 = local_certificate(0.7,0.8,2,rigorous);
+atlas = struct( ...
+    'schema','lowerboundsineq.omega-up-spectral-cr-lg-atlas.v1', ...
+    'rigorous',rigorous, ...
+    'x_domain',I_infsup(0.5,0.75), ...
+    'y_domain',I_infsup(0.74,0.87), ...
+    'x_domain_lower',0.5, ...
+    'x_domain_upper',0.75, ...
+    'y_domain_lower',0.74, ...
+    'y_domain_upper',0.87, ...
+    'x_anchors',[0.5,0.7], ...
+    'y_anchors',0.8, ...
+    'certificates',{{cert1,cert2}});
+
+selected = omega_up_spectral_atlas_certificate( ...
+    atlas,I_infsup(0.51,0.52),I_infsup(0.79,0.81));
+assert(selected.atlas_index_x == 1);
+assert(selected.anchor_id == 1);
+selected = omega_up_spectral_atlas_certificate( ...
+    atlas,I_infsup(0.68,0.69),I_infsup(0.79,0.81));
+assert(selected.atlas_index_x == 2);
+assert(selected.anchor_id == 2);
+
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    atlas,0.49,I_infsup(0.79,0.81)), ...
+    'omega_up_spectral_atlas_certificate:OutsideAtlas');
+bad = atlas;
+bad.certificates{1,1} = rmfield(cert1,'reference_triangle');
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    bad,0.51,0.8), ...
+    'omega_up_spectral_atlas_certificate:BadCertificate');
+bad = atlas;
+bad.certificates{1,1}.reference_triangle(1) = 0.1;
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    bad,0.51,0.8), ...
+    'omega_up_spectral_atlas_certificate:BadCertificate');
+bad = atlas;
+bad.rigorous = 2;
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    bad,0.51,0.8), ...
+    'omega_up_spectral_atlas_certificate:BadAtlas');
+bad = atlas;
+bad.x_domain_lower = 1;
+bad.x_domain_upper = 0;
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    bad,0.51,0.8), ...
+    'omega_up_spectral_atlas_certificate:BadAtlas');
+bad = atlas;
+bad.certificates = {cert1};
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    bad,0.51,0.8), ...
+    'omega_up_spectral_atlas_certificate:BadAtlas');
+
+atlas_path = [tempname,'.mat'];
+cleanup = onCleanup(@() local_delete(atlas_path));
+save(atlas_path,'atlas','-v7');
+try
+    digest = ver10_file_sha256(atlas_path);
+catch ME
+    if exist('OCTAVE_VERSION','builtin')
+        fprintf(['test_omega_up_spectral_atlas: ', ...
+            'file-hash checks skipped in this Octave runtime\n']);
+        fprintf('test_omega_up_spectral_atlas: PASS\n');
+        clear cleanup
+        return;
+    end
+    rethrow(ME);
+end
+selected = omega_up_spectral_atlas_certificate( ...
+    atlas_path,0.51,0.8,digest);
+assert(selected.anchor_id == 1);
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    atlas_path,0.51,0.8), ...
+    'omega_up_spectral_atlas_certificate:MissingHash');
+
+atlas.x_anchors = [0.7,0.5];
+atlas.certificates = {cert2,cert1};
+save(atlas_path,'atlas','-v7');
+new_digest = ver10_file_sha256(atlas_path);
+selected = omega_up_spectral_atlas_certificate( ...
+    atlas_path,0.51,0.8,new_digest);
+assert(selected.anchor_id == 1);
+clear omega_up_spectral_atlas_certificate
+local_expect_error(@() omega_up_spectral_atlas_certificate( ...
+    atlas_path,0.51,0.8,digest), ...
+    'omega_up_spectral_atlas_certificate:HashMismatch');
+
+fprintf('test_omega_up_spectral_atlas: PASS\n');
+clear cleanup
+end
+
+
+function certificate = local_certificate(x,y,id,rigorous)
+certificate = struct( ...
+    'schema','lowerboundsineq.triangle-spectral-cr-lg-certificate.v1', ...
+    'reference_triangle',[0,0,1,0,x,y], ...
+    'lambda1_LG_lower',40, ...
+    'lambda1_Ritz_upper',50, ...
+    'lambda2_CR_lower',80, ...
+    'rigorous',rigorous, ...
+    'mesh_used',true, ...
+    'anchor_id',id);
+end
+
+
+function local_expect_error(action,identifier)
+threw = false;
+try
+    action();
+catch ME
+    threw = strcmp(ME.identifier,identifier);
+end
+assert(threw);
+end
+
+
+function local_delete(filename)
+if exist(filename,'file')
+    delete(filename);
+end
+end

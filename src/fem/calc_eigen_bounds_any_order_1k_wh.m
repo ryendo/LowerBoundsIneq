@@ -1,4 +1,7 @@
-function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy, U_with_bdry, meshCG] = calc_eigen_bounds_any_order_1k_wh(neig,tri_intval,N_LG,N_rho,LagrangeOrder)
+function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy, ...
+    U_with_bdry, meshCG, diagnostics] = ...
+    calc_eigen_bounds_any_order_1k_wh( ...
+        neig,tri_intval,N_LG,N_rho,LagrangeOrder)
 
     % =============================================================
     % Step 1: Compute rho <= lambda_{n+1} using CR + explicit C_h
@@ -34,18 +37,32 @@ function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy, U_with_bdry, mesh
     % Solve CR generalized eigenproblem: K u = lambda M u
     global INTERVAL_MODE;
     if INTERVAL_MODE
-        lamCR = veigs(K_CR, M_CR, neig + 1, 'sm');
+        [lamCR,CR_indices] = ...
+            veigs(K_CR,M_CR,neig+1,'sm');
+        lamCR = lamCR(:);
+        CR_indices = CR_indices(:);
+        ordered_CR = I_intval(zeros(neig+1,1));
+        for k = 1:neig+1
+            location = find(CR_indices == k);
+            if numel(location) ~= 1
+                error( ...
+                    'calc_eigen_bounds_any_order_1k_wh:BadCRIndices', ...
+                    ['The verified CR solve did not return precisely ', ...
+                     'spectral index %d.'],k);
+            end
+            ordered_CR(k) = lamCR(location);
+        end
+        lamCR = ordered_CR;
         Ch = I_intval('0.1893') * hmax;
     else
         lamCR = eigs(K_CR, M_CR, neig + 1, 'sm');
+        [~,order_CR] = sort(real(lamCR),'ascend');
+        lamCR = lamCR(order_CR);
         Ch = 0.1893 * hmax;
     end
 
     % rho_j = lam_j / (1 + (Ch^2) * lam_j), then take rho = rho_{n+1}
     rhoCand = lamCR ./ (1 + lamCR .* (Ch^2));
-    [~, idx] = sort(I_mid(rhoCand));
-    rhoCand = rhoCand(idx);
-    
     nCand = numel(I_mid(rhoCand));
     if nCand < neig + 1
         error('CR eigen computation returned too few eigenvalues.');
@@ -75,11 +92,22 @@ function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy, U_with_bdry, mesh
 
     LA_eigf=U; A_grad=K_CG; A_L2=M_CG;
 
-
-    Lambda = max(lamCG(1:neig)); % upper bound for lambda_n
+    % The values returned by EIGS above are only floating-point
+    % approximations.  Certify the Ritz values of their conforming span
+    % before using a number as a min--max upper bound or as the LG shift
+    % separation threshold.
+    ritzCG = verified_ritz_enclosures(U,K_CG,M_CG,neig);
+    Lambda = I_intval(I_sup(ritzCG(neig))); % rigorous upper bound for lambda_n
     if ~(I_sup(Lambda) < I_inf(rho))
-        warning(['Separation not verified (need Lambda < rho). ', ...
-                 'Refine meshes for CR and/or CG to enforce Lambda < rho.']);
+        message = ['Separation not verified (need Lambda < rho). ', ...
+                   'Refine meshes for CR and/or CG to enforce Lambda < rho.'];
+        if INTERVAL_MODE
+            error('calc_eigen_bounds_any_order_1k_wh:SeparationFailed', ...
+                message);
+        else
+            warning('calc_eigen_bounds_any_order_1k_wh:SeparationFailed', ...
+                message);
+        end
     end
 
     % =============================================================
@@ -105,27 +133,58 @@ function [eig_bounds, LA_eigf, A_grad, A_L2, A_xx, A_xy, A_yy, U_with_bdry, mesh
     % Symmetrize (interval I_hull if interval mode)
     A = I_hull(A, A');
     B = I_hull(B, B');
+    if INTERVAL_MODE && ~isspd(B)
+        error('calc_eigen_bounds_any_order_1k_wh:BLNotSPD', ...
+            'The Lehmann--Goerisch matrix B is not verified positive definite.');
+    end
 
     % Solve A x = mu B x for the smallest neig mu (should be negative)
     mu = I_eig(A, B, neig);
 
     if any(I_sup(mu) >= 0)
-        warning('Some mu are not verified negative. Check separation and assembly.');
+        message = ['Some mu are not verified negative. ', ...
+                   'Check separation and assembly.'];
+        if INTERVAL_MODE
+            error('calc_eigen_bounds_any_order_1k_wh:MuNotNegative', ...
+                message);
+        else
+            warning('calc_eigen_bounds_any_order_1k_wh:MuNotNegative', ...
+                message);
+        end
     end
 
     % Lehmann–Goerisch bound:
     %   lambda_i >= rho - rho/(1 - mu_{n+1-i})
     muRev = mu(end:-1:1);
-    lamLow = rho - rho ./ (1 - muRev);
+    % The theorem fixes this reverse-index pairing.  Do not reorder
+    % overlapping interval enclosures by their midpoints.
+    lamLow = (rho-rho./(1-muRev));
+    lamLow = lamLow(:);
 
-    % Sort by I_midpoints and return verified lower endpoints
-    [~, idx] = sort(I_mid(lamLow));
-    lamLow = lamLow(idx)';
+    eig_bounds = I_intval(zeros(neig,1));
+    for k = 1:neig
+        lower = I_inf(lamLow(k));
+        upper = I_sup(ritzCG(k));
+        if lower > upper
+            error('calc_eigen_bounds_any_order_1k_wh:InconsistentBounds', ...
+                'LG lower bound exceeds the verified Ritz upper bound.');
+        end
+        eig_bounds(k) = I_infsup(lower,upper);
+    end
 
-    eig_bounds = I_hull(lamCG,lamLow); % 1-by-neig
-
-    % lamCG
-    % lamLow
-    % eig_bounds
+    % lamCG is deliberately not returned as an upper bound.
+    diagnostics = struct();
+    diagnostics.method = 'Lehmann-Goerisch-with-CR-Liu-shift';
+    diagnostics.CR_discrete_eigenvalues = lamCR;
+    diagnostics.CR_Liu_lower_bounds = rhoCand;
+    diagnostics.CR_lambda_next_lower = I_intval(I_inf(rho));
+    diagnostics.CR_hmax = hmax;
+    diagnostics.CR_constant = Ch;
+    diagnostics.Ritz_enclosures = ritzCG;
+    diagnostics.LG_shift = rho;
+    diagnostics.LG_generalized_eigenvalues = mu;
+    diagnostics.LG_lower_bounds = lamLow;
+    diagnostics.separation_margin = rho-Lambda;
+    diagnostics.requires_upper_cluster_dimension = false;
 
 end

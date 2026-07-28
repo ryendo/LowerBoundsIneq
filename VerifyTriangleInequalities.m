@@ -7,12 +7,13 @@ classdef VerifyTriangleInequalities < handle
 %           v = VerifyTriangleInequalities();
 %           v.run();
 %   (2) Reproduce the full computation from scratch:
-%           v = VerifyTriangleInequalities();
-%           v.compute(20);  % use 20 parallel workers
+%           run('scripts_run/run_omega_mid_unified_full.m')
 %
-% .compute() runs parallel FEM verification over inputs/cell_def.csv,
-% AUTO-AGGREGATES per-worker outputs into results/J1_OmegaMid.csv and
-% results/J2_OmegaMid.csv, and calls .run() to validate everything passes.
+% .compute(20) remains as a compatibility entry point, but delegates to the
+% same strict unified wrapper.  That wrapper shares one CR/Liu or
+% Liu--Lehmann--Goerisch spectral computation between J1 and J2, resumes
+% validated chunk checkpoints, publishes the two CSVs transactionally, and
+% finally calls .run().
 %
 % Paper: R. Endo, X. Liu, P. Mariano, "Sharp Dirichlet Eigenvalue
 % Inequalities on Triangles".
@@ -53,22 +54,20 @@ classdef VerifyTriangleInequalities < handle
         function compute(obj, nworkers, cell_def_file)
             if nargin < 2 || isempty(nworkers),      nworkers = 20; end
             if nargin < 3 || isempty(cell_def_file), cell_def_file = obj.cell_def_file; end
-            cd(obj.project_root);
-            my_intlab_config();
-            t0 = tic;
-            fprintf('\n=== VerifyTriangleInequalities.compute ===\n');
-            fprintf('cell_def : %s\n', cell_def_file);
-            fprintf('workers  : %d\n', nworkers);
-            if ~exist(obj.raw_dir,'dir'), mkdir(obj.raw_dir); end
-            fprintf('\n--- J1 ---\n');
-            run_parallel_omegamid('J1', [], nworkers, cell_def_file, obj.raw_dir);
-            fprintf('\n--- J2 ---\n');
-            run_parallel_omegamid('J2', [], nworkers, cell_def_file, obj.raw_dir);
-            fprintf('\n--- aggregate raw -> results/ ---\n');
-            obj.aggregate();
-            fprintf('\n--- validate ---\n');
-            obj.run();
-            fprintf('\n=== total wall time: %.2f hours ===\n', toc(t0)/3600);
+            if nworkers ~= 20
+                error('VerifyTriangleInequalities:UnifiedWorkerCount', ...
+                    ['The authoritative ver10 wrapper fixes workers=20.  ', ...
+                     'Call run_omega_mid_unified_parallel directly for ', ...
+                     'a diagnostic run with another worker count.']);
+            end
+            if ~strcmp(local_canonical_path(cell_def_file), ...
+                    local_canonical_path(obj.cell_def_file))
+                error('VerifyTriangleInequalities:UnifiedInputFile', ...
+                    ['The authoritative publication wrapper uses the ', ...
+                     'tracked inputs/cell_def.csv.  Call the unified ', ...
+                     'parallel driver directly for another input.']);
+            end
+            run(fullfile(obj.scripts_dir,'run_omega_mid_unified_full.m'));
         end
 
         function aggregate(obj)
@@ -124,7 +123,17 @@ classdef VerifyTriangleInequalities < handle
             assert(all(ismember(req_res, obj.J2.Properties.VariableNames)), 'J2 missing columns');
             assert(numel(unique(obj.J1.cell_id))==height(obj.J1), 'J1 cell_id duplicates');
             assert(numel(unique(obj.J2.cell_id))==height(obj.J2), 'J2 cell_id duplicates');
-            fprintf('  OK: columns present, no duplicates.\n');
+            expected_ids = sort(double(obj.cell_def.i(:)));
+            assert(height(obj.J1)==numel(expected_ids), ...
+                'J1 row count does not match cell_def');
+            assert(height(obj.J2)==numel(expected_ids), ...
+                'J2 row count does not match cell_def');
+            assert(isequal(sort(double(obj.J1.cell_id(:))),expected_ids), ...
+                'J1 cell_id set does not match cell_def.i');
+            assert(isequal(sort(double(obj.J2.cell_id(:))),expected_ids), ...
+                'J2 cell_id set does not match cell_def.i');
+            fprintf(['  OK: columns present, no duplicates, and both ', ...
+                'cell-id sets exactly match cell_def.\n']);
         end
 
         function checkVerification(obj)
@@ -134,33 +143,69 @@ classdef VerifyTriangleInequalities < handle
             else, warning('J1 has %d unverified rows', n1u); end
             if n2u==0, fprintf('  J2: %d/%d rows verified.\n', height(obj.J2), height(obj.J2));
             else, warning('J2 has %d unverified rows', n2u); end
-            fprintf('\n[check] J_lower > 0 everywhere\n');
-            n1n = sum(obj.J1.J_lower <= 0); n2n = sum(obj.J2.J_lower <= 0);
-            if n1n==0, fprintf('  J1: all J_lower positive (min=%.4e).\n', min(obj.J1.J_lower));
-            else, warning('J1 has %d rows with J_lower <= 0', n1n); end
-            if n2n==0, fprintf('  J2: all J_lower positive (min=%.4e).\n', min(obj.J2.J_lower));
-            else, warning('J2 has %d rows with J_lower <= 0', n2n); end
+            fprintf('\n[check] J_lower finite and > 0 everywhere\n');
+            bad1 = ~isfinite(obj.J1.J_lower) | obj.J1.J_lower <= 0;
+            bad2 = ~isfinite(obj.J2.J_lower) | obj.J2.J_lower <= 0;
+            if ~any(bad1)
+                fprintf('  J1: all J_lower finite and positive (min=%.4e).\n', ...
+                    min(obj.J1.J_lower));
+            else
+                warning('J1 has %d nonfinite or nonpositive J_lower rows',sum(bad1));
+            end
+            if ~any(bad2)
+                fprintf('  J2: all J_lower finite and positive (min=%.4e).\n', ...
+                    min(obj.J2.J_lower));
+            else
+                warning('J2 has %d nonfinite or nonpositive J_lower rows',sum(bad2));
+            end
+            bad_status1 = ~strcmpi(strtrim(string(obj.J1.status)),'ok');
+            bad_status2 = ~strcmpi(strtrim(string(obj.J2.status)),'ok');
+            if any(bad_status1), warning('J1 has %d non-ok status rows',sum(bad_status1)); end
+            if any(bad_status2), warning('J2 has %d non-ok status rows',sum(bad_status2)); end
         end
 
         function printSummary(obj)
             fprintf('\n========== VERIFICATION SUMMARY ==========\n');
             for conj_c = {'J1','J2'}
                 conj = conj_c{1}; T = obj.(conj);
-                n = height(T); v = sum(T.verified == 1);
-                Jmin = min(T.J_lower); Jmed = median(T.J_lower); Jmax = max(T.J_lower);
+                certified = T.verified == 1 ...
+                    & isfinite(T.J_lower) & T.J_lower > 0 ...
+                    & strcmpi(strtrim(string(T.status)),'ok');
+                n = height(T); v = sum(certified);
+                finite_values = T.J_lower(isfinite(T.J_lower));
+                if isempty(finite_values)
+                    Jmin = NaN; Jmed = NaN; Jmax = NaN;
+                else
+                    Jmin = min(finite_values);
+                    Jmed = median(finite_values);
+                    Jmax = max(finite_values);
+                end
                 fprintf('%s: %d cells  verified=%d (%.3f%%)  J_lower min/med/max = %.3e / %.3e / %.3e\n', ...
                     conj, n, v, v/n*100, Jmin, Jmed, Jmax);
             end
             d1 = sum(contains(string(obj.J1.note), 'derived from subs'));
             d2 = sum(contains(string(obj.J2.note), 'derived from subs'));
             fprintf('Parents verified via subdivision: J1=%d, J2=%d\n', d1, d2);
-            all_ok = (sum(obj.J1.verified==1)==height(obj.J1)) && (sum(obj.J2.verified==1)==height(obj.J2)) && ...
-                     all(obj.J1.J_lower > 0) && all(obj.J2.J_lower > 0);
+            certified1 = obj.J1.verified==1 ...
+                & isfinite(obj.J1.J_lower) & obj.J1.J_lower > 0 ...
+                & strcmpi(strtrim(string(obj.J1.status)),'ok');
+            certified2 = obj.J2.verified==1 ...
+                & isfinite(obj.J2.J_lower) & obj.J2.J_lower > 0 ...
+                & strcmpi(strtrim(string(obj.J2.status)),'ok');
+            all_ok = all(certified1) && all(certified2);
             if all_ok
                 fprintf('\n*** VERIFIED: J1 >= 0 and J2 >= 0 on all cells of Omega_mid. ***\n');
             else
                 fprintf('\n!!! INCOMPLETE: some cells unverified or J_lower <= 0.\n');
+                error('VerifyTriangleInequalities:IncompleteCertificate', ...
+                    ['Committed Omega_mid results are incomplete: every ', ...
+                     'row must have verified=1, finite J_lower>0, and status=ok.']);
             end
         end
     end
+end
+
+
+function path_value = local_canonical_path(path_value)
+path_value = char(java.io.File(char(path_value)).getCanonicalPath());
 end

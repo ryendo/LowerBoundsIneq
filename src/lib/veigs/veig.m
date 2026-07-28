@@ -86,6 +86,9 @@ if issparse(A) || issparse(B)
 else
     eig_list = eig(A_mid, B_mid);
 end
+% EIG does not promise storage order.  Every use below treats INDEX as a
+% spectral index, so impose ascending generalized-eigenvalue order here.
+[eig_list,~] = sort(real(eig_list),'ascend');
 
 eig_bounds = intval([]);
 min_eig_B  = min(eig(B_mid));  % B positive definite

@@ -1,206 +1,381 @@
 # LowerBoundsIneq
 
-Computer-assisted verification of **sharp Dirichlet Laplacian eigenvalue inequalities on planar triangles**, using rigorous finite-element bounds with INTLAB interval arithmetic.
+Computer-assisted proofs of sharp Dirichlet-Laplacian inequalities on
+planar triangles.  The ver10 code combines verified finite-element
+eigenvalue bounds, INTLAB interval arithmetic, and a residual enclosure for
+second shape derivatives.
 
 Companion code to
 
-> R. Endo, X. Liu, P. Mariano, *Sharp Dirichlet Eigenvalue Inequalities on Triangles*.
+> R. Endo, X. Liu, P. Mariano, *Sharp Dirichlet Eigenvalue Inequalities on
+> Triangles*.
 
----
+## Statements covered by the code
 
-## What is verified
+For a triangle \(T\), let \(\lambda _1(T)\), \(A=|T|\), and \(L=|\partial T|\)
+denote its first Dirichlet eigenvalue, area, and perimeter.  The lower-bound
+part verifies
 
-Let $\triangle$ be a planar triangle, $\lambda_1(\triangle)$ the first Dirichlet eigenvalue of the Laplacian, $|\triangle|$ the area and $|\partial\triangle|$ the perimeter.
+\[
+J_1(T)=\lambda _1(T)A-\frac{\pi^2}{16}\frac{L^2}{A}
+       -\frac{7\sqrt3\,\pi^2}{12}\geq0
+\]
 
-This repository certifies non-negativity of the two shape functionals:
+and
 
-### J1 (Laugesen–Siudeja)
-$$
-J_1(\triangle)\ =\ \lambda_1(\triangle)|\triangle|\ -\ \frac{\pi^{2}}{16}\frac{|\partial\triangle|^{2}}{|\triangle|}\ -\ \frac{7\sqrt{3}\,\pi^{2}}{12}\ \ge\ 0.
-$$
+\[
+J_2(T)=\lambda _1(T)A-
+\frac{4\pi^2}{(3+\sqrt{\pi\sqrt3})^2}
+\frac{(L+\sqrt{4\pi A})^2}{4A}\geq0.
+\]
 
-### J2 (Cheeger type)
-$$
-J_2(\triangle)\ =\ \lambda_1(\triangle)|\triangle|\ -\ \frac{4\pi^{2}}{(3+\sqrt{\pi\sqrt{3}})^{2}}\cdot\frac{(|\partial\triangle|+\sqrt{4\pi|\triangle|})^{2}}{4|\triangle|}\ \ge\ 0.
-$$
+Both are sharp at the equilateral triangle.  The upper-bound part addresses
+Siudeja's conjecture
 
-Both inequalities are sharp with equality at the equilateral triangle.
+\[
+\lambda _1(T)\leq \frac{\pi^2L^2}{12A^2}
+                       +\frac{\sqrt3\,\pi^2}{3A}.
+\]
 
-The parameter space of triangles (up to similarity, restricted by symmetry to $x\in[0.5,1]$, and with the equilateral neighborhood handled separately as $\Omega_{\rm up}$) is tiled by a collection of **cells** $\{C_i\}_{i=1}^{N}$ covering the intermediate region $\Omega_{\rm mid}$.  For each cell the verification uses:
+The normalized parameterization is
+\(T(x,y)=\operatorname{conv}\{(0,0),(1,0),(x,y)\}\), with
+\(1/2\leq x\leq1\), \(x^2+y^2\leq1\), and \(A=y/2\).
 
-- a **rigorous FEM lower bound** for $\lambda_1$ (Crouzeix–Raviart, optionally sharpened by Lehmann–Goerisch);
-- **rigorous interval bounds** on area and perimeter;
-- **INTLAB** interval arithmetic to enclose rounding errors in the verified interval computations.
+## Ver10 sharp strong-residual Hessian enclosure
 
-If every cell yields $J_k\ge 0$ then $J_k\ge 0$ on all of $\Omega_{\rm mid}$.
+Let \(\lambda_i\) be simple and let \(v\in H^2\cap H^1_0\) approximate its
+material derivative.  With
 
----
+\[
+\mathcal J_i(v)=2\ell_i(v)-(a-\lambda_i m)(v,v),\qquad
+g_{i,v}=\operatorname{div}(P_e\nabla\phi_i+\nabla v)
+        +\alpha_i\phi_i+\lambda_i v,
+\]
+
+the exact complementarity identity is
+
+\[
+\ell_i(w_i)-\mathcal J_i(v)
+=\sum_{k\ne i}\frac{|(g_{i,v},\phi_k)|^2}
+{\lambda_k-\lambda_i}.
+\]
+
+Consequently
+
+\[
+c_i-2\mathcal J_i(v)-\frac{2\|g_{i,v}\|_0^2}
+{\lambda_{i+1}-\lambda_i}
+\leq\lambda_{i,ee}\leq
+c_i-2\mathcal J_i(v)+\frac{2\|g_{i,v}\|_0^2}
+{\lambda_i-\lambda_{i-1}},
+\]
+
+with the right residual term equal to zero for \(i=1\).  Both constants
+are sharp: equality is attained by residuals in the adjacent eigenspaces.
+
+The computable version replaces the exact eigenpair by certified errors
+\(\varepsilon_\lambda,\varepsilon_a,\varepsilon_0\).  If
+\(\widetilde g\) is the polynomial strong residual, the implementation
+returns
+
+\[
+\widetilde D_i-\varepsilon_D-2E_i^+
+\leq\lambda_{i,ee}\leq
+\widetilde D_i+\varepsilon_D+2E_i^-,
+\]
+
+where
+
+\[
+E_i^\pm=
+\left(
+\frac{\|\widetilde g\|_0+\delta_0}{\sqrt{d_i^\pm}}
++\sqrt{C_i^\pm}\,\delta_a
+\right)^2,\qquad E_1^-=0.
+\]
+
+It uses no eigenfunction series, high-mode cutoff, spectral tail, or upper
+cluster dimension.  For fixed positive adjacent gaps, its width converges
+to zero when the eigenvalue/eigenfunction errors and strong residual
+converge to zero.
+
+For \(\lambda_1\), the only verified spectral endpoints are
+
+\[
+L_1^{\rm LG}\leq\lambda_1\leq U_1^{\rm Ritz}
+<L_2^{\rm CR}\leq\lambda_2.
+\]
+
+Here \(L_1^{\rm LG}\) is Lehmann--Goerisch, \(U_1^{\rm Ritz}\) is a
+verified conforming Rayleigh--Ritz value, and \(L_2^{\rm CR}\) is the
+corrected Crouzeix--Raviart--Liu lower bound.  No enclosure of
+\(\lambda_3\) is used.  The same certificate routine accepts an arbitrary
+index \(i\), returning LG/Ritz enclosures through \(i\) and one CR--Liu
+lower endpoint for \(\lambda_{i+1}\); it never asks for
+\(\lambda_{i+2}\).  The \(\Omega_{\rm up}\) Hessian trials are global
+degree-11 Bernstein bubbles, so their mass, stiffness, Hessian, and strong
+residual norms use exact barycentric moments and outward rounding.  The
+Hessian step itself has no mesh, numerical quadrature, or flux
+reconstruction; CR/LG is confined to the independent scalar endpoint
+certificate.
+
+The main entry points are:
+
+- `src/fem/strong_residual_hessian_enclosure.m`
+- `src/fem/calc_ddlambda1_bernstein_strong_bounds.m`
+- `src/fem/triangle_spectral_certificate_cr_lg.m`
+- `src/algorithms/build_omega_up_spectral_atlas_cr_lg.m`
+- `src/algorithms/Algorithm2_VerifyOmegaUpResidual.m`
+
+## Certificate decomposition and current committed results
+
+The proof is split into independently checkable regions.
+
+### \(\Omega_{\rm mid}\) certificate
+
+`inputs/cell_def.csv` contains **188,623** cells.  The authoritative ver10
+driver is `scripts_run/run_omega_mid_unified_parallel.m`; the production
+wrapper is `scripts_run/run_omega_mid_unified_full.m`.  It computes \(J_1\)
+and \(J_2\) together, reusing one strict CR/Liu or
+Liu--Lehmann--Goerisch spectral enclosure per cell.  In the LG branch it
+records and checks the conforming Ritz separation, interval positivity of
+the LG Gram matrix, negativity of the transformed eigenvalues, and
+finiteness of the resulting lower bound.
+
+The historical committed CSVs are not a ver10 certificate: each contains
+two `J_lower=Inf` rows that the former validator accepted.  The current
+validator deliberately rejects them.  Final counts and extrema will be
+quoted here only after the unified clean-commit interval run has atomically
+replaced both CSVs and regenerated `results/verification_summary.json`.
+
+### Ver10 \(\Omega_{\rm up}\) residual production run
+
+`scripts_run/run_omega_up_all_residual_parallel.m` is the resumable
+production driver.  Its production grid is
+
+- `eps_up=0.122`, `Nx=976`, and `Ny=488` for \(x\)-direction rectangles;
+- `Ny_axis=1952`, hence axis width \(0.122/1952=0.0000625\), for the
+  \(y\)-direction symmetry-axis intervals;
+- degree-11 Bernstein eigenfunction/material trials and exact polynomial
+  strong-residual norms;
+- a reusable coarse atlas of
+  \(L_1^{\rm LG},U_1^{\rm Ritz},L_2^{\rm CR}\), transported to each fine
+  cell by rigorous \(2\times2\) affine metric factors;
+- `functional_scope='split'`: \(J_1,J_2\) on all of
+  \(\Omega_{\rm up}\), and the Siudeja upper functional only on
+  \(y\geq0.85\).
+
+One Hessian-estimator call per directional cell is reused for every
+in-scope functional.  Rectangles outside \(x^2+y^2\leq1\) are recorded as
+geometric skips.  Each task has an atomic MAT checkpoint, so an interrupted
+HPC run can be resumed.  The merged CSV, MAT file, and JSON manifest record
+the configuration, Git commit, functional scopes, extrema, failures, and
+whether coverage is complete.
+
+No final \(\Omega_{\rm up}\) extremum is quoted here until a complete
+interval-mode production manifest has been generated and committed.  A
+`max_tasks` or `task_ids` run is a smoke test and has
+`coverage_complete=false`; it is not a proof of the whole region.
+
+### Siudeja upper-bound certificate
+
+The upper conjecture is split into:
+
+1. \(0<y\leq0.06\): an analytic sector-inclusion certificate using an
+   explicit radial trial function, evaluated after nonsingular \(y^2\)
+   scaling; no Bessel zero is numerically evaluated.
+2. \(0.06\leq y\leq0.851\): a conforming P4/\(N=8\) fixed-trial atlas,
+   affinely transported over each cell and enclosed by a centered
+   mean-value formula in INTLAB.
+3. \(0.85\leq y\leq\sqrt3/2\): the independent
+   \(\Omega_{\rm up}\) residual-Hessian certificate above.
+
+The overlap \(0.85\leq y\leq0.851\) is intentional and is recorded in the
+atlas manifest.  See `src/upper_conjecture/README.md` for the proof formulas
+and reproduction commands.
+
+Historical `results/J*_OmegaUp*.csv` and
+`results/omega_connection_summary.*` predate the ver10 residual production
+driver.  Likewise, files below `results/omega_up_taylor_*` are
+double-precision exploratory diagnostics.  They are not the ver10
+\(\Omega_{\rm up}\) or upper-conjecture proof certificate.
+
+## Dependencies
+
+- MATLAB R2023b or later (the production run used R2023b).
+- Parallel Computing Toolbox for multi-worker production runs.
+- Gmsh (tested with 4.8.4).
+- An external INTLAB installation for every rigorous run.
+- The revised VFEM2D and VEIGS/VEIG routines under `src/lib/`.
+
+INTLAB is **not vendored in this repository**.  Set `INTLAB_ROOT` to the
+installation directory before starting MATLAB.  The supported reproducible
+configuration also sets separate mesh storage.  `my_intlab_config.m`
+defaults to `/usr/bin/gmsh`; set `GMSH_COMMAND` when Gmsh is installed
+elsewhere:
+
+```sh
+export INTLAB_ROOT=/path/to/Intlab_V12
+export LOWERBOUNDS_MESH_PATH=/path/to/private/mesh-workspace
+export GMSH_COMMAND=/usr/bin/gmsh
+```
+
+Each parallel worker initializes the same `INTLAB_ROOT`.  Temporary meshes
+are kept outside the checkout so workers do not share generated files.
 
 ## Repository layout
 
-```
+```text
 LowerBoundsIneq/
-├── VerifyTriangleInequalities.m    ← MAIN CLASS (public entry-point)
-├── my_intlab_config.m              ← edit paths here before running
-├── readme.md
+├── VerifyTriangleInequalities.m
 ├── inputs/
-│   └── cell_def.csv                ← the cell tiling used for verification
-├── results/                        ← final verification outputs
-│   ├── J1_OmegaMid.csv             ← one row per cell with J1_lower
-│   ├── J2_OmegaMid.csv             ← one row per cell with J2_lower
-│   ├── omega_connection_summary.md ← Omega_mid/Omega_up interface audit
-│   ├── verification_summary.md     ← human-readable summary
+│   └── cell_def.csv
+├── results/
+│   ├── J1_OmegaMid.csv
+│   ├── J2_OmegaMid.csv
+│   ├── verification_summary.md
 │   └── verification_summary.json
+├── scripts_run/
+│   ├── run_omega_mid_unified_parallel.m
+│   ├── run_omega_mid_unified_full.m
+│   ├── run_omega_up_all_residual_parallel.m
+│   ├── run_omega_up_spectral_atlas.m
+│   ├── run_omega_up_residual_full.m
+│   ├── run_omega_up_residual_smoke.m
+│   ├── run_upper_conjecture_global_finalize.m
+│   └── run_upper_conjecture_atlas_full.m
 ├── src/
-│   ├── VerificationRunner.m        ← orchestrator (called by the main class)
-│   ├── algorithms/                 ← Algorithm2/3, J bound, verify_J_positive
-│   ├── fem/                        ← eigenvalue lower-bound utilities
-│   ├── mesh/                       ← gmsh integration
-│   ├── interval/                   ← INTLAB wrappers
-│   └── lib/                        ← bundled external FEM/eigensolver libs
-├── Intlab_V12/                     ← bundled INTLAB 12 (run once to regenerate its .mat)
-├── scripts_run/                    ← parallel driver + helper diagnostics
-├── tests/                          ← unit-level tests
-└── tools/                          ← miscellaneous developer tools
+│   ├── algorithms/
+│   ├── fem/
+│   ├── interval/
+│   ├── lib/
+│   ├── mesh/
+│   └── upper_conjecture/
+└── tests/
 ```
 
----
+## Validate the published \(\Omega_{\rm mid}\) results
 
-## Core Libraries & Dependencies
-
-This project relies on specialized libraries for verified numerical computation:
-
-1. **INTLAB**: The fundamental toolbox for rigorous interval arithmetic in MATLAB.
-   - **Source:** [http://www.tuhh.de/ti3/intlab/](http://www.tuhh.de/ti3/intlab/) [INTLAB_V12, INTLAB_V14 were used for the computation.]
-2. Revised version of **VFEM2D**: Used for rigorous finite element matrix assembly and high-precision eigenvalue bounds (Lehmann–Goerisch method).
-   - **Source:** [https://github.com/xfliu/VFEM2D](https://github.com/xfliu/VFEM2D) [2025/12/13]
-3. **veigs**: Used for solving generalized matrix eigenvalue problems with rigorous error bounds with the information of indices.
-   - **Source:** [https://github.com/yuuka-math/veigs](https://github.com/yuuka-math/veigs) [2025/12/13]
-
-The MATLAB Parallel Computing Toolbox is used only to distribute independent cell computations via `parpool`/`parfor`.  It is not part of the interval-arithmetic error control; each worker initializes INTLAB before running its assigned cells.
-
----
-
-## Quick start
-
-1. Clone the repository and `cd` into it.
-2. Edit the constants at the top of `my_intlab_config.m` (at minimum set `GMSH_COMMAND`).
-3. Start MATLAB in the project root and run **one** of:
-
-### (A) Validate the committed results (no recomputation)
+This read-only validation does not require INTLAB:
 
 ```matlab
 v = VerifyTriangleInequalities();
 v.run();
 ```
 
-This reads `inputs/cell_def.csv` and `results/J{1,2}_OmegaMid.csv`, checks every row has `verified==1` and `J_lower>0`, and prints a summary.  Expected output:
+It checks the exact cell-ID set and row count, `status=ok`, `verified=1`,
+and finite strict positivity of all 188,623 lower bounds for each
+functional.  It fails closed on the historical pre-ver10 CSVs.
 
-```
-[load] inputs/cell_def.csv
-[load] results/J1_OmegaMid.csv
-[load] results/J2_OmegaMid.csv
-  cell_def: 95226 cells; J1: 95226 rows; J2: 95026 rows
-...
-========== VERIFICATION SUMMARY ==========
-J1: 95226 cells  verified=95226 (100.000%)  J_lower min/med/max = 6.856e-07 / 8.003e+00 / 2.626e+03
-J2: 95026 cells  verified=95026 (100.000%)  J_lower min/med/max = 1.232e-05 / 3.067e+01 / 2.633e+03
+## Rigorous smoke tests
 
-*** VERIFIED: J1 >= 0 and J2 >= 0 on all cells of Omega_mid. ***
-```
-
-### (B) Reproduce the full computation from scratch
+After setting the external runtime variables:
 
 ```matlab
-v = VerifyTriangleInequalities();
-v.compute(20);      % 20 parallel workers; raise if you have more cores
+my_intlab_config
+test_verified_ritz_enclosures(1)
+test_bernstein_strong_residual_estimator(1)
 ```
 
-`.compute(nworkers)` orchestrates the parallel parfor over all cells, auto-aggregates per-worker outputs into `results/J{1,2}_OmegaMid.csv`, and then calls `.run()` to validate.  On a 96-core machine with 20 workers the full run takes roughly 6–8 hours per conjecture.
+The last command checks CR/LG endpoint separation and both a point and a
+finite-width Bernstein Hessian cell.  It deliberately does not claim full
+regional coverage.  Targeted production-width checks are in
+`scripts_run/run_omega_up_rectangle_targeted_smoke.m` and
+`scripts_run/run_omega_up_axis_targeted_smoke.m`.
 
----
+## Reproduce the production computations
 
-## Input / Output formats
+The authoritative \(\Omega_{\rm mid}\) atlas is recomputed with:
 
-### `inputs/cell_def.csv`
-
-One row per cell. The tiling used here has 95 226 cells. Columns:
-
-| column              | meaning                                                              |
-|---------------------|----------------------------------------------------------------------|
-| `i`                 | cell identifier (= row index)                                        |
-| `x_inf`, `x_sup`    | interval $[x_{\rm inf},x_{\rm sup}]$ for the apex $x$-parameter      |
-| `theta_inf`, `theta_sup` | interval for the apex angle parameter $\theta$                  |
-| `mesh_size_lower_cr`| mesh size for the CR lower-bound FEM                                  |
-| `isLG`              | `1` to refine with Lehmann–Goerisch, `0` for CR-only                  |
-| `mesh_size_lower_LG`| (if `isLG=1`) mesh size for the LG solve                              |
-| `fem_order_lower_LG`| (if `isLG=1`) FEM order for the LG solve                              |
-
-Example first rows:
-```
-i,x_inf,x_sup,theta_inf,theta_sup,mesh_size_lower_cr,isLG,mesh_size_lower_LG,fem_order_lower_LG
-1,0.7992187500000001,0.8,0.0487077921309046,0.0487324060873969,0.005,0,0.1249,2
-2,0.7992187500000001,0.8,0.0487324060873969,0.0487570200438891,0.005,0,0.1249,2
+```matlab
+run('scripts_run/run_omega_mid_unified_full.m')
 ```
 
-### `results/J1_OmegaMid.csv` and `results/J2_OmegaMid.csv`
+The wrapper requires a clean Git checkout, uses 20 workers and resumable
+chunk checkpoints, validates exact input coverage, and publishes the J1/J2
+CSV pair transactionally only after every strict certificate succeeds.
+`VerifyTriangleInequalities().compute(20)` delegates to this same wrapper.
 
-One row per cell. Columns:
+First create the reusable CR/LG endpoint atlas outside the checkout:
 
-| column          | meaning                                                            |
-|-----------------|--------------------------------------------------------------------|
-| `conjecture`    | `J1` or `J2`                                                        |
-| `cell_id`       | matches `i` in the cell_def                                         |
-| `verified`      | `1` iff the rigorous $J_k$-lower bound is positive on this cell     |
-| `J_lower`       | rigorous lower bound for $J_k$ over this cell                       |
-| `status`        | `ok` or `error`                                                     |
-| `note`          | free-text note (usually empty)                                      |
-| `run_timestamp` | when this row was computed                                          |
-
-Example:
-```
-conjecture,cell_id,verified,J_lower,status,note,run_timestamp
-J1,1,1,7.09959390563225767e+00,"ok","",2026-04-19 21:29:22
-J1,2,1,7.09708917028804009e+00,"ok","",2026-04-19 21:29:29
+```sh
+export VER10_SPECTRAL_ATLAS=/absolute/certificates/omega_up_spectral_atlas.mat
+export VER10_CERTIFICATE_ROOT=/absolute/certificates
+matlab -batch "run('scripts_run/run_omega_up_spectral_atlas.m')"
 ```
 
-### `results/verification_summary.md`
+Then run the fine Hessian cover:
 
-Human-readable digest of the verification statistics; see the file itself for the current numbers.
+```sh
+matlab -batch "run('scripts_run/run_omega_up_residual_full.m')"
+```
 
-### `results/omega_connection_summary.md`
+The Siudeja compact atlas is:
 
-liulab HPC digest checking the geometric overlap between the certified
-`\Omega_{\mathrm{mid}}` cells and the certified `\Omega_{\mathrm{up}}`
-calculation.  It also records the exploratory signed Taylor diagnostic from
-`results/omega_up_taylor_descent_probe_hpc_*`; those Taylor rows are marked
-`exploratory_double` and are not used as a proof certificate.
+```matlab
+addpath scripts_run
+run('scripts_run/run_upper_conjecture_atlas_full.m')
+```
 
----
+After the compact and residual manifests exist, set
+`VER10_COMPACT_UPPER_MANIFEST` and `VER10_OMEGA_UP_MANIFEST`, then run
+`scripts_run/run_upper_conjecture_global_finalize.m`.  The finalizer
+checks both CSV hashes, strict margins, source commits, complete coverage,
+and the nonempty \(0.85\leq y\leq0.851\) overlap before emitting a global
+certificate.
 
-## Computation pipeline, if you need to reproduce
+On a shared 96-core node, keep threaded BLAS single-threaded so that the 20
+MATLAB workers do not oversubscribe the node:
 
-If you want to regenerate the per-worker raw outputs yourself:
+```sh
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+matlab -batch "run('scripts_run/run_omega_up_residual_full.m')"
+```
 
-1. `my_intlab_config;` — initialise INTLAB and add paths.
-2. `run_parallel_omegamid('J1', [], 20, 'inputs/cell_def.csv', 'results_raw');`
-3. `run_parallel_omegamid('J2', [], 20, 'inputs/cell_def.csv', 'results_raw');`
-4. `v = VerifyTriangleInequalities(); v.aggregate(); v.run();`
+Use a stable `run_name` to resume an interrupted \(\Omega_{\rm up}\) run;
+the driver rejects checkpoints whose configuration fingerprint differs.
 
-Internally `VerifyTriangleInequalities.compute()` does exactly this sequence.
+## Input and output formats
 
-The rigorous eigenvalue lower-bound routine is in `src/fem/cell_lower_eig_bound.m`; the J-bound is in `src/algorithms/compute_J_lower_bound.m`; the single-cell driver is `src/algorithms/verify_J_positive.m`.
+`inputs/cell_def.csv` has one row per \(\Omega_{\rm mid}\) cell:
 
----
+| column | meaning |
+|---|---|
+| `i` | cell identifier |
+| `x_inf`, `x_sup` | apex \(x\)-interval |
+| `theta_inf`, `theta_sup` | apex-angle interval |
+| `mesh_size_lower_cr` | CR lower-bound mesh size |
+| `isLG` | whether Lehmann--Goerisch refinement is used |
+| `mesh_size_lower_LG` | LG mesh size |
+| `fem_order_lower_LG` | LG finite-element order |
+
+`results/J1_OmegaMid.csv` and `results/J2_OmegaMid.csv` retain the legacy
+columns `conjecture`, `cell_id`, `verified`, `J_lower`, `status`, `note`,
+and `run_timestamp`, followed by the shared spectral method,
+\(\lambda_1\) lower bound, LG shift/Ritz/separation/transformed-eigenvalue
+diagnostics, strictness flags, timing, and error fields.
+
+The residual \(\Omega_{\rm up}\) driver writes one checkpoint per task and,
+after merging, `omega_up_all_cells.csv`, `omega_up_all_results.mat`, and
+`omega_up_all_manifest.json`.  Only an interval manifest with complete
+coverage and every requested functional certified is a regional proof.
+
+The upper-conjecture driver writes `upper_atlas_interval_*.csv` and
+`upper_manifest_interval_*.json`.  Its atlas manifest covers only through
+its recorded `y_up`; completion of the global upper conjecture also
+requires the overlapping residual certificate.
 
 ## Citation
 
-If you use this code please cite the associated paper:
+If you use this code, please cite:
 
-- R. Endo, X. Liu, P. Mariano, *Sharp Dirichlet Eigenvalue Inequalities on Triangles*.
-
----
+- R. Endo, X. Liu, P. Mariano, *Sharp Dirichlet Eigenvalue Inequalities on
+  Triangles*.
 
 ## Licenses
 
-External libraries bundled under `src/lib/` (`VFEM2D`, `veigs`) and `Intlab_V12/` retain their own licenses (see their directories).
+The external libraries under `src/lib/` retain their original licenses.
+INTLAB is separately installed and remains subject to its own license.

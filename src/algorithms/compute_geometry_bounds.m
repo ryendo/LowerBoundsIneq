@@ -71,7 +71,9 @@ end
 % ----------------------------
 function xI = local_to_intval(x)
     if ischar(x) || isstring(x)
-        xI = I_intval(str2double(x));
+        % Preserve the exact decimal endpoint from cell_def.csv.  Passing
+        % through a binary double first can move a one-sided cell boundary.
+        xI = I_intval(char(x));
     else
         xI = I_intval(x);
     end

@@ -98,20 +98,32 @@ def verified_result_stats(path: Path) -> dict[str, Any]:
         if cid:
             latest_by_cell[cid] = row
         flag = row.get("verified", row.get("is_verified", ""))
-        if flag not in {"", "0", "false", "False"}:
-            verified += 1
         val = float_or_nan(row.get("J_lower"))
-        if not math.isnan(val):
+        valid = (
+            flag not in {"", "0", "false", "False"}
+            and math.isfinite(val)
+            and val > 0
+            and row.get("status", "").strip().lower() == "ok"
+        )
+        if valid:
+            verified += 1
+        if math.isfinite(val):
             lower_values.append(val)
 
     latest_verified = 0
     latest_lowers: list[float] = []
     for row in latest_by_cell.values():
         flag = row.get("verified", "")
-        if flag not in {"", "0", "false", "False"}:
-            latest_verified += 1
         val = float_or_nan(row.get("J_lower"))
-        if not math.isnan(val):
+        valid = (
+            flag not in {"", "0", "false", "False"}
+            and math.isfinite(val)
+            and val > 0
+            and row.get("status", "").strip().lower() == "ok"
+        )
+        if valid:
+            latest_verified += 1
+        if math.isfinite(val):
             latest_lowers.append(val)
 
     values = latest_lowers if latest_by_cell else lower_values
@@ -170,6 +182,17 @@ def taylor_stats(taylor_dir: Path) -> dict[str, Any]:
             "min_direct_J1": float_or_nan(old_res.get("min_direct_J1")),
         },
     }
+
+
+def json_safe(value: Any) -> Any:
+    """Replace non-finite diagnostics by null before strict JSON encoding."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_safe(item) for item in value]
+    return value
 
 
 def write_report(out_path: Path, data: dict[str, Any]) -> None:
@@ -237,27 +260,48 @@ def main() -> None:
     repo = args.repo.resolve()
     mid_geom = cell_geometry_stats(repo / args.cell_file)
     mid_geom["cell_file"] = args.cell_file
+    j1_result_path = repo / "results" / "J1_OmegaMid.csv"
+    j2_result_path = repo / "results" / "J2_OmegaMid.csv"
+    j1_step12_path = repo / "results" / "J1_OmegaUp_step1_2_cells.csv"
+    j2_step12_path = repo / "results" / "J2_OmegaUp_step1_2_cells.csv"
+    j1_step13_path = repo / "results" / "J1_OmegaUp_step1_3_axis.csv"
+    j2_step13_path = repo / "results" / "J2_OmegaUp_step1_3_axis.csv"
+    taylor_path = repo / args.taylor_dir
     data: dict[str, Any] = {
         "eps_up": args.eps_up,
         "omega_mid_geometry": mid_geom,
         "connection_margin": args.eps_up - mid_geom["min_distance_to_p0"],
         "omega_mid_results": {
-            "J1": verified_result_stats(repo / "results" / "J1_OmegaMid.csv"),
-            "J2": verified_result_stats(repo / "results" / "J2_OmegaMid.csv"),
+            "J1": verified_result_stats(j1_result_path),
+            "J2": verified_result_stats(j2_result_path),
         },
         "omega_up_fem": {
-            "J1_step_1_2": omega_up_step_stats(repo / "results" / "J1_OmegaUp_step1_2_cells.csv"),
-            "J2_step_1_2": omega_up_step_stats(repo / "results" / "J2_OmegaUp_step1_2_cells.csv"),
-            "J1_step_1_3": omega_up_step_stats(repo / "results" / "J1_OmegaUp_step1_3_axis.csv"),
-            "J2_step_1_3": omega_up_step_stats(repo / "results" / "J2_OmegaUp_step1_3_axis.csv"),
+            "J1_step_1_2": omega_up_step_stats(j1_step12_path),
+            "J2_step_1_2": omega_up_step_stats(j2_step12_path),
+            "J1_step_1_3": omega_up_step_stats(j1_step13_path),
+            "J2_step_1_3": omega_up_step_stats(j2_step13_path),
         },
-        "omega_up_taylor": taylor_stats(repo / args.taylor_dir),
+        "omega_up_taylor": taylor_stats(taylor_path),
     }
+    data["omega_mid_results"]["J1"]["path"] = "results/J1_OmegaMid.csv"
+    data["omega_mid_results"]["J2"]["path"] = "results/J2_OmegaMid.csv"
+    data["omega_up_fem"]["J1_step_1_2"]["path"] = \
+        "results/J1_OmegaUp_step1_2_cells.csv"
+    data["omega_up_fem"]["J2_step_1_2"]["path"] = \
+        "results/J2_OmegaUp_step1_2_cells.csv"
+    data["omega_up_fem"]["J1_step_1_3"]["path"] = \
+        "results/J1_OmegaUp_step1_3_axis.csv"
+    data["omega_up_fem"]["J2_step_1_3"]["path"] = \
+        "results/J2_OmegaUp_step1_3_axis.csv"
+    data["omega_up_taylor"]["directory"] = args.taylor_dir
 
     out_json = repo / args.out_json
     out_md = repo / args.out_md
     out_json.parent.mkdir(parents=True, exist_ok=True)
-    out_json.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    out_json.write_text(
+        json.dumps(json_safe(data), indent=2, sort_keys=True, allow_nan=False)
+        + "\n"
+    )
     write_report(out_md, data)
     print(f"Wrote {out_md}")
     print(f"Wrote {out_json}")

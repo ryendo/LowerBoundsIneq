@@ -4,6 +4,16 @@ Intlab_V12/
 
 # runtime artifacts
 results_raw/
+results/omega_up_all_residual/**/checkpoints/
+results/omega_up_all_residual/**/*.mat
+results/omega_up_all_residual/**/*.csv
+results/omega_up_all_residual/**/*.json
+results/upper_conjecture/*.csv
+results/upper_conjecture/*.json
+results/omega_mid_unified/**/checkpoints/
+results/omega_mid_unified/**/*.mat
+results/omega_mid_unified/**/*.csv
+results/omega_mid_unified/**/*.json
 src/mesh/temp_s*.geo
 src/mesh/temp_s*.msh
 src/mesh/temp_w*.geo

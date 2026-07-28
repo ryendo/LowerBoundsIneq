@@ -8,7 +8,10 @@ function my_intlab_config_worker()
     cur = strsplit(path, pathsep);
     bad = {};
     this_proj = fileparts(fileparts(mfilename('fullpath')));
-    ok_intlab = fullfile(this_proj,'Intlab_V12');
+    ok_intlab = getenv('INTLAB_ROOT');
+    if isempty(ok_intlab)
+        ok_intlab = fullfile(this_proj,'Intlab_V12');
+    end
     for k = 1:numel(cur)
         p = cur{k};
         if (contains(p, 'Intlab_V12') || contains(p, 'INTLAB')) && ...

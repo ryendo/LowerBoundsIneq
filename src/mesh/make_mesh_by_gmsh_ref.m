@@ -23,6 +23,7 @@ FV = [0 0; 1 0; I_mid(a) I_mid(b)];
 
 geo_file = fullfile(mesh_path, sprintf('temp%s.geo', suffix));
 msh_file = fullfile(mesh_path, sprintf('temp%s.msh', suffix));
+cleanup = onCleanup(@() local_delete_mesh_files(geo_file,msh_file));
 
 fid = fopen(geo_file,'w');
 for i=1:3
@@ -38,4 +39,14 @@ cmd = sprintf('bash "%s" "%s" "%s" "%s"', sh, gmsh_command, mesh_path, suffix);
 mesh = gmshread(msh_file);
 mesh.domain = V;
 mesh = apply_exact_boundary_point_setting(mesh,V);
+end
+
+
+function local_delete_mesh_files(geo_file,msh_file)
+if exist(geo_file,'file')
+    delete(geo_file);
+end
+if exist(msh_file,'file')
+    delete(msh_file);
+end
 end

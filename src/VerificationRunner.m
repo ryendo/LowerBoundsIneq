@@ -305,7 +305,9 @@ classdef VerificationRunner < handle
                     row.note     = getStrRow(Tcsv, r, "note", "");
                     per_cell(i) = row;
 
-                    if isfinite(row.verified) && row.verified == 1
+                    if isfinite(row.verified) && row.verified == 1 ...
+                            && isfinite(row.J_lower) && row.J_lower > 0 ...
+                            && strcmpi(strtrim(row.status),'ok')
                         n_verified = n_verified + 1;
                         if obj.verbose
                             fprintf('[OmegaMid] Skip verified cell %d/%d (id=%d)\n', i, nCells, cid);
@@ -362,6 +364,15 @@ classdef VerificationRunner < handle
                         Jlb      = getNum(cr, {'J_lower','J_lb','J_min','lower_bound','lb','JLower'}, NaN);
                         status   = getStr(cr, {'status','state','message','msg'}, 'ok');
                         note     = "";
+                        certified_row = isfinite(verified) && verified == 1 ...
+                            && isfinite(Jlb) && Jlb > 0 ...
+                            && strcmpi(strtrim(status),'ok');
+                        if ~certified_row
+                            verified = 0;
+                            if strcmpi(strtrim(status),'ok')
+                                status = 'nonfinite_or_nonpositive_bound';
+                            end
+                        end
                     catch ME
                         verified = NaN;
                         Jlb      = NaN;
@@ -375,7 +386,9 @@ classdef VerificationRunner < handle
                     per_cell(i).status   = status;
                     per_cell(i).note     = note;
 
-                    if isfinite(verified) && verified == 1
+                    if isfinite(verified) && verified == 1 ...
+                            && isfinite(Jlb) && Jlb > 0 ...
+                            && strcmpi(strtrim(status),'ok')
                         n_verified = n_verified + 1;
                     else
                         all_ok = false;

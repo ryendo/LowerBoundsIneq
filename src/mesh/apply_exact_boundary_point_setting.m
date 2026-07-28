@@ -1,115 +1,341 @@
-function mesh=apply_exact_boundary_point_setting(mesh, tri_vertices)
-% apply_exact_boundary_point_setting - Adjust boundary-node coordinates so
-% that all boundary nodes lie exactly on the triangle boundary.
+function mesh = apply_exact_boundary_point_setting(mesh,tri_vertices)
+%APPLY_EXACT_BOUNDARY_POINT_SETTING  Certified triangle-boundary snapping.
 %
-% INPUT:
-%   mesh           : a structure containing fields:
-%                       mesh.nodes            (N × 2)
-%                       mesh.boundary_edges   (M × 2)
-%   tri_vertices   : 3 × 2 matrix, each row is (x,y) of triangle vertex
+% Every topological boundary node is either snapped to a triangle vertex or
+% written constructively as
 %
-% NOTE:
-%   The function modifies mesh.nodes in-place if mesh is a handle-like struct,
-%   otherwise return the modified mesh.
+%        p_j + t (p_k-p_j),             0 <= t <= 1,
 %
-% Description:
-% Given 'mesh' is a triangulation of domain specified by 3*2 tri_vertices,
-% each row of which is a vertex.
-% This function proccess the boundary nodes in mesh.nodes to make sure the
-% boundary nodes is really on the border of domain. 
-% Note that mesh.boundary_edges provides the list of boundary edges, each
-% edge is represented by the indices of its two end vertices.
+% on one of the three domain sides.  Classification is performed using the
+% midpoint Gmsh geometry, whereas the construction uses TRI_VERTICES itself;
+% hence interval vertices produce an interval enclosure on the corresponding
+% moving side.  Any unclassifiable node is an error: no unchanged boundary
+% coordinate is allowed to escape certification.
+%
+% A fail-closed postcheck proves:
+%   (i) every topological boundary node has the construction above;
+%  (ii) the endpoints of every boundary mesh edge share a domain side;
+% (iii) every interval element signed area excludes zero and has the same
+%       orientation as TRI_VERTICES.
 
-% For example, let p1, p2, p3 be the 3 vertices specified by tri_vertices.
-% For an edge [k1,k2], use the direction to dertermined the domain edge on which 
-% edge [k1, k2] is locaed on. Suppose nodes(k1,:) and nodes(k2,:) is on triangle domain
-% edge p1-p2, then for each (x,y) = nodes(k1,:) and (x,y)=nodes (k2,:), y coordinate
-% is recalculated by the line determined by p1-p2.
-% If nodes(k1,:) is very near to vertex p of p1, p2 or p3, then set the value of
-% nodes(k1,:) by p.
+validate_mesh_input(mesh,tri_vertices);
 
+nodes = I_intval(mesh.nodes);
+bedges = double(mesh.boundary_edges);
+elements = double(mesh.elements);
+vertices = I_intval(tri_vertices);
+mid_vertices = I_mid(vertices);
 
-    % Triangle vertices
-    p1_ori = tri_vertices(1, :);
-    p2_ori = tri_vertices(2, :);
-    p3_ori = tri_vertices(3, :);
-    p1 = I_mid(p1_ori);
-    p2 = I_mid(p2_ori);
-    p3 = I_mid(p3_ori);
+domain_area2 = signed_area_twice(vertices(1,:),vertices(2,:),vertices(3,:));
+domain_sign = certified_nonzero_sign(domain_area2, ...
+    'apply_exact_boundary_point_setting:DegenerateTriangle', ...
+    'The interval signed area of TRI_VERTICES contains zero.');
 
-    nodes = I_intval(mesh.nodes);
-    bedges = mesh.boundary_edges;
+% Gmsh writes the midpoint geometry in double precision.  The original
+% absolute tolerance is retained, but failure now aborts certification.
+vertex_tol = 1e-6;
+edge_tol = 1e-6;
 
-    % Tolerance: distance to vertex threshold
-    vertex_tol = 1e-6;
-    % Tolerance to determine which triangle edge the boundary edge is on
-    edge_tol = 1e-6;
+number_of_nodes = size(nodes,1);
+constructed = false(number_of_nodes,1);
+construction_kind = zeros(number_of_nodes,1); % 1: vertex, 2: side
+construction_id = zeros(number_of_nodes,1);
+side_membership = false(number_of_nodes,3);
+side_parameter = NaN(number_of_nodes,3);
 
-    % Loop over boundary edges
-    x_idx_list = unique(bedges(:))';
-    for idx = x_idx_list
-        x = I_mid(nodes(idx,:));
+boundary_nodes = unique(bedges(:))';
+side_start = [1,2,3];
+side_end = [2,3,1];
 
-        % If close to a vertex → snap exactly
-        if norm(nodes(idx,:) - p1) < vertex_tol
-	    nodes(idx,:) = p1_ori; continue;
-	end
-        if norm(nodes(idx,:) - p2) < vertex_tol
-	    nodes(idx,:) = p2_ori; continue;
-	end
-        if norm(nodes(idx,:) - p3) < vertex_tol
-	    nodes(idx,:) = p3_ori; continue;
-	end
+for idx = boundary_nodes
+    x = I_mid(nodes(idx,:));
 
-        % Determine triangle edge by minimum distance
-        % Distances to edges
-        d12 = point_to_line_distance(x,p1,p2);
-        d23 = point_to_line_distance(x,p2,p3);
-        d31 = point_to_line_distance(x,p3,p1);
+    vertex_distances = [ ...
+        norm(x-mid_vertices(1,:)), ...
+        norm(x-mid_vertices(2,:)), ...
+        norm(x-mid_vertices(3,:))];
+    [nearest_vertex_distance,vertex_id] = min(vertex_distances);
 
-        [min_distance, edgeID] = min([d12, d23, d31]);
-
-        if min_distance > edge_tol
-            continue
-        end
-
-        % Pick correct segment endpoints
-        switch edgeID
-            case 1
-                a = p1_ori;  b = p2_ori;
-            case 2
-                a = p2_ori;  b = p3_ori;
-            case 3
-                a = p3_ori;  b = p1_ori;
-        end
-
-        % Project each node onto the correct edge
-        nodes(idx,:) = project_to_segment(nodes(idx,:), a, b);
-
+    if nearest_vertex_distance <= vertex_tol
+        nodes(idx,:) = vertices(vertex_id,:);
+        constructed(idx) = true;
+        construction_kind(idx) = 1;
+        construction_id(idx) = vertex_id;
+        [side_membership(idx,:),side_parameter(idx,:)] = ...
+            vertex_side_data(vertex_id);
+        continue
     end
 
-    % Write back
-    mesh.nodes = nodes;
+    distances = zeros(1,3);
+    parameters = zeros(1,3);
+    for side_id = 1:3
+        [parameters(side_id),distances(side_id)] = ...
+            point_to_segment_projection_data( ...
+                x,mid_vertices(side_start(side_id),:), ...
+                mid_vertices(side_end(side_id),:));
+    end
+    [nearest_side_distance,side_id] = min(distances);
+    if ~(isfinite(nearest_side_distance) && nearest_side_distance <= edge_tol)
+        error('apply_exact_boundary_point_setting:BoundaryNodeClassification', ...
+            ['Boundary node %d is %.17g from its nearest triangle side; ' ...
+             'the admissible distance is %.17g.'], ...
+            idx,nearest_side_distance,edge_tol);
+    end
 
+    t = parameters(side_id);
+    if ~(isfinite(t) && t >= 0 && t <= 1)
+        error('apply_exact_boundary_point_setting:InvalidProjectionParameter', ...
+            'Boundary node %d produced the invalid side parameter %.17g.', ...
+            idx,t);
+    end
+    a = vertices(side_start(side_id),:);
+    b = vertices(side_end(side_id),:);
+    nodes(idx,:) = a+t*(b-a);
+    constructed(idx) = true;
+    construction_kind(idx) = 2;
+    construction_id(idx) = side_id;
+    side_membership(idx,side_id) = true;
+    side_parameter(idx,side_id) = t;
+end
+
+postcheck_boundary_construction(nodes,vertices,boundary_nodes, ...
+    constructed,construction_kind,construction_id,side_membership, ...
+    side_parameter);
+postcheck_boundary_edges(bedges,elements,side_membership,side_parameter);
+postcheck_element_orientations(nodes,elements,domain_sign);
+
+mesh.nodes = nodes;
 end
 
 
-%% ===============================================================
-%   Helper Functions
-% ===============================================================
-
-% Distance from point P to infinite line AB
-function d = point_to_line_distance(P, A, B)
-    AP = P - A;
-    AB = B - A;
-    d = norm(AP - (dot(AP,AB)/dot(AB,AB))*AB);
+function validate_mesh_input(mesh,tri_vertices)
+required_fields = {'nodes','boundary_edges','elements'};
+if ~isstruct(mesh)
+    error('apply_exact_boundary_point_setting:InvalidMesh', ...
+        'MESH must be a structure.');
+end
+for k = 1:numel(required_fields)
+    if ~isfield(mesh,required_fields{k})
+        error('apply_exact_boundary_point_setting:InvalidMesh', ...
+            'MESH is missing the field "%s".',required_fields{k});
+    end
+end
+if size(mesh.nodes,2) ~= 2 || isempty(mesh.nodes)
+    error('apply_exact_boundary_point_setting:InvalidMesh', ...
+        'MESH.nodes must be a nonempty N-by-2 array.');
+end
+if ~isequal(size(tri_vertices),[3,2])
+    error('apply_exact_boundary_point_setting:InvalidTriangle', ...
+        'TRI_VERTICES must be a 3-by-2 array.');
+end
+if size(mesh.boundary_edges,2) ~= 2 || isempty(mesh.boundary_edges)
+    error('apply_exact_boundary_point_setting:InvalidMesh', ...
+        'MESH.boundary_edges must be a nonempty M-by-2 array.');
+end
+if size(mesh.elements,2) ~= 3 || isempty(mesh.elements)
+    error('apply_exact_boundary_point_setting:InvalidMesh', ...
+        'MESH.elements must be a nonempty K-by-3 array.');
+end
+interval_nodes = I_intval(mesh.nodes(:));
+interval_vertices = I_intval(tri_vertices(:));
+if any(~isfinite(I_inf(interval_nodes))) || ...
+        any(~isfinite(I_sup(interval_nodes))) || ...
+        any(~isfinite(I_inf(interval_vertices))) || ...
+        any(~isfinite(I_sup(interval_vertices)))
+    error('apply_exact_boundary_point_setting:NonfiniteCoordinate', ...
+        'All node and triangle-vertex bounds must be finite.');
 end
 
-% Project point P onto segment AB (clamped projection)
-function Pproj = project_to_segment(P, A, B)
-    AB = B - A;
-    t = dot(P-A, AB) / dot(AB, AB);
-    % clamp to [0,1]
-    t = max(0, min(1, t));
-    Pproj = A + t * AB;
+number_of_nodes = size(mesh.nodes,1);
+index_arrays = {mesh.boundary_edges,mesh.elements};
+for k = 1:numel(index_arrays)
+    indices = double(index_arrays{k}(:));
+    if any(~isfinite(indices)) || any(indices ~= floor(indices)) || ...
+            any(indices < 1) || any(indices > number_of_nodes)
+        error('apply_exact_boundary_point_setting:InvalidConnectivity', ...
+            'All connectivity entries must be valid integer node indices.');
+    end
+end
+if any(mesh.boundary_edges(:,1) == mesh.boundary_edges(:,2))
+    error('apply_exact_boundary_point_setting:InvalidBoundaryEdge', ...
+        'A boundary edge has identical endpoint indices.');
+end
+if any(mesh.elements(:,1) == mesh.elements(:,2) | ...
+       mesh.elements(:,2) == mesh.elements(:,3) | ...
+       mesh.elements(:,3) == mesh.elements(:,1))
+    error('apply_exact_boundary_point_setting:InvalidElement', ...
+        'A triangle element repeats a node index.');
+end
+end
+
+
+function [membership,parameters] = vertex_side_data(vertex_id)
+membership = false(1,3);
+parameters = NaN(1,3);
+switch vertex_id
+    case 1
+        membership([1,3]) = true;
+        parameters([1,3]) = [0,1];
+    case 2
+        membership([1,2]) = true;
+        parameters([1,2]) = [1,0];
+    case 3
+        membership([2,3]) = true;
+        parameters([2,3]) = [1,0];
+    otherwise
+        error('apply_exact_boundary_point_setting:InternalVertexIndex', ...
+            'Unexpected triangle vertex index %d.',vertex_id);
+end
+end
+
+
+function [t,distance] = point_to_segment_projection_data(point,a,b)
+direction = b-a;
+length_squared = dot(direction,direction);
+if ~(isfinite(length_squared) && length_squared > 0)
+    error('apply_exact_boundary_point_setting:DegenerateMidpointSide', ...
+        'A midpoint triangle side has zero or nonfinite length.');
+end
+t = dot(point-a,direction)/length_squared;
+t = max(0,min(1,t));
+projection = a+t*direction;
+distance = norm(point-projection);
+end
+
+
+function postcheck_boundary_construction(nodes,vertices,boundary_nodes, ...
+        constructed,construction_kind,construction_id,side_membership, ...
+        side_parameter)
+side_start = [1,2,3];
+side_end = [2,3,1];
+
+for idx = boundary_nodes
+    if ~constructed(idx) || ~any(side_membership(idx,:))
+        error('apply_exact_boundary_point_setting:UnconstructedBoundaryNode', ...
+            'Boundary node %d has no certified triangle-side construction.',idx);
+    end
+
+    member_parameters = side_parameter(idx,side_membership(idx,:));
+    if any(~isfinite(member_parameters)) || ...
+            any(member_parameters < 0) || any(member_parameters > 1)
+        error('apply_exact_boundary_point_setting:InvalidBoundaryCertificate', ...
+            'Boundary node %d has invalid side-membership parameters.',idx);
+    end
+
+    if construction_kind(idx) == 1
+        expected = vertices(construction_id(idx),:);
+    elseif construction_kind(idx) == 2
+        side_id = construction_id(idx);
+        t = side_parameter(idx,side_id);
+        a = vertices(side_start(side_id),:);
+        b = vertices(side_end(side_id),:);
+        expected = a+t*(b-a);
+    else
+        error('apply_exact_boundary_point_setting:InvalidBoundaryCertificate', ...
+            'Boundary node %d has no recognized construction type.',idx);
+    end
+
+    if ~same_interval_vector(nodes(idx,:),expected)
+        error('apply_exact_boundary_point_setting:BoundaryConstructionMismatch', ...
+            'Boundary node %d does not equal its certified construction.',idx);
+    end
+end
+end
+
+
+function postcheck_boundary_edges(bedges,elements,side_membership,side_parameter)
+side_used = false(1,3);
+for k = 1:size(bedges,1)
+    i = bedges(k,1);
+    j = bedges(k,2);
+    common_sides = find(side_membership(i,:) & side_membership(j,:));
+    if isempty(common_sides)
+        error('apply_exact_boundary_point_setting:BoundaryEdgeDomainSide', ...
+            ['Boundary edge (%d,%d) has endpoints on different triangle ' ...
+             'sides.'],i,j);
+    end
+    parameter_difference = abs( ...
+        side_parameter(i,common_sides)-side_parameter(j,common_sides));
+    nondegenerate_sides = common_sides(parameter_difference > 0);
+    if isempty(nondegenerate_sides)
+        error('apply_exact_boundary_point_setting:CollapsedBoundaryEdge', ...
+            'Boundary edge (%d,%d) collapses under boundary projection.',i,j);
+    end
+    side_used(nondegenerate_sides) = true;
+end
+if ~all(side_used)
+    error('apply_exact_boundary_point_setting:IncompleteDomainBoundary', ...
+        'The mesh boundary does not constructively cover all triangle sides.');
+end
+
+declared_edges = sort(double(bedges),2);
+unique_declared_edges = unique(declared_edges,'rows');
+if size(unique_declared_edges,1) ~= size(declared_edges,1)
+    error('apply_exact_boundary_point_setting:DuplicateBoundaryEdge', ...
+        'MESH.boundary_edges contains duplicate undirected edges.');
+end
+
+all_element_edges = sort([ ...
+    elements(:,[1,2]); ...
+    elements(:,[2,3]); ...
+    elements(:,[3,1])],2);
+[unique_element_edges,~,edge_map] = unique(all_element_edges,'rows');
+edge_counts = accumarray(edge_map,1);
+if any(edge_counts > 2)
+    error('apply_exact_boundary_point_setting:NonmanifoldMesh', ...
+        'An element edge has incidence greater than two.');
+end
+topological_boundary = unique_element_edges(edge_counts == 1,:);
+if ~isequal(sortrows(unique_declared_edges),sortrows(topological_boundary))
+    error('apply_exact_boundary_point_setting:BoundaryTopologyMismatch', ...
+        ['MESH.boundary_edges does not equal the boundary induced by ' ...
+         'MESH.elements.']);
+end
+end
+
+
+function postcheck_element_orientations(nodes,elements,domain_sign)
+for k = 1:size(elements,1)
+    ids = elements(k,:);
+    area2 = signed_area_twice( ...
+        nodes(ids(1),:),nodes(ids(2),:),nodes(ids(3),:));
+    element_sign = certified_nonzero_sign(area2, ...
+        'apply_exact_boundary_point_setting:ElementAreaContainsZero', ...
+        sprintf(['The interval signed area of element %d contains zero ' ...
+                 'or is nonfinite.'],k));
+    if element_sign ~= domain_sign
+        error('apply_exact_boundary_point_setting:InconsistentElementOrientation', ...
+            ['Element %d has orientation opposite to TRI_VERTICES; all ' ...
+             'element orientations must agree.'],k);
+    end
+end
+end
+
+
+function area2 = signed_area_twice(a,b,c)
+ab = b-a;
+ac = c-a;
+area2 = ab(1)*ac(2)-ab(2)*ac(1);
+end
+
+
+function sign_value = certified_nonzero_sign(value,error_id,error_message)
+lower = I_inf(value);
+upper = I_sup(value);
+if ~(isscalar(lower) && isscalar(upper) && ...
+        isfinite(lower) && isfinite(upper))
+    error(error_id,'%s',error_message);
+end
+if lower > 0
+    sign_value = 1;
+elseif upper < 0
+    sign_value = -1;
+else
+    error(error_id,'%s',error_message);
+end
+end
+
+
+function tf = same_interval_vector(a,b)
+tf = isequal(I_inf(a),I_inf(b)) && isequal(I_sup(a),I_sup(b));
 end

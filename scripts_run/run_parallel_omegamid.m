@@ -44,6 +44,11 @@ function run_parallel_omegamid(conjecture_type, cell_range, nworkers, cell_def_f
     addpath(fullfile(fileparts(mfilename('fullpath'))));  % so workers see my_intlab_config_worker
     f_init = parfevalOnAll(gcp, @my_intlab_config_worker, 0);
     wait(f_init);  % CRITICAL: wait for per-worker INTLAB init before parfor, else some iterations fail to dispatch
+    for f = 1:numel(f_init)
+        if ~isempty(f_init(f).Error)
+            rethrow(f_init(f).Error);
+        end
+    end
     fprintf('[parallel] worker init done.\n');
 
     % Build per-worker chunk boundaries (precomputed to avoid closure pitfalls).

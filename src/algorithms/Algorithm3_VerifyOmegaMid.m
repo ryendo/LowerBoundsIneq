@@ -106,13 +106,9 @@ for i_cell = cell_start:cell_end
     cell_struct.mesh_size_lower_cr = current_cell.mesh_size_lower_cr;
     cell_struct.isLG = current_cell.isLG;
 
-    if current_cell.isLG == 1
-        cell_struct.mesh_size_lower_LG  = current_cell.mesh_size_lower_LG;
-        cell_struct.fem_order_lower_LG  = current_cell.fem_order_lower_LG;
-    else
-        cell_struct.mesh_size_lower_LG = NaN;
-        cell_struct.fem_order_lower_LG = NaN;
-    end
+    % Keep fallback LG data available even on a CR-first cell.
+    cell_struct.mesh_size_lower_LG = current_cell.mesh_size_lower_LG;
+    cell_struct.fem_order_lower_LG = current_cell.fem_order_lower_LG;
 
     % Compute
     status = "ok";
@@ -139,7 +135,12 @@ for i_cell = cell_start:cell_end
 
     % Store
     all_results.cell_id(local_k)      = double(current_cell.i);
-    all_results.verified(local_k)     = logical(is_cell_verified);
+    finite_positive = isfinite(J_lower) && J_lower > 0;
+    is_cell_verified = logical(is_cell_verified) && finite_positive;
+    if ~finite_positive && status == "ok"
+        status = "nonfinite_or_nonpositive_bound";
+    end
+    all_results.verified(local_k)     = is_cell_verified;
     all_results.J_lower(local_k)      = J_lower;
     all_results.compute_time(local_k) = double(cell_time);
     all_results.status(local_k)       = status;
