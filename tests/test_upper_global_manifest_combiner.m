@@ -41,8 +41,8 @@ combined = verify_upper_conjecture_global_manifests( ...
     compact_json,residual_json,output_json);
 assert(combined.complete_certificate);
 assert(exist(output_json,'file') == 2);
-assert(combined.margins.compact_lower == 0.01);
-assert(combined.margins.residual_JUP_upper == -0.03);
+assert(local_serialized_equal(combined.margins.compact_lower,0.01));
+assert(local_serialized_equal(combined.margins.residual_JUP_upper,-0.03));
 
 % Numeric coverage fields are checked, not just the manifest's true flag.
 bad = residual;
@@ -329,4 +329,9 @@ function local_remove_directory(directory)
 if exist(directory,'dir')
     rmdir(directory,'s');
 end
+end
+
+
+function tf = local_serialized_equal(left,right)
+tf = abs(left-right) <= eps(max(abs(left),abs(right)));
 end
