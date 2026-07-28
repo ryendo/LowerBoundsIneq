@@ -2701,7 +2701,10 @@ catch ME
     error('run_omega_mid_unified_parallel:NoSHA256', ...
         'Cannot initialize SHA-256: %s',ME.message);
 end
-engine.update(typecast(uint8(bytes(:)),'int8'));
+bytes = uint8(bytes(:));
+if ~isempty(bytes)
+    engine.update(typecast(bytes,'int8'));
+end
 raw = typecast(engine.digest(),'uint8');
 digest = lower(reshape(dec2hex(raw,2).',1,[]));
 end
