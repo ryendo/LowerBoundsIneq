@@ -1,7 +1,7 @@
 function [lambda,dlambda,ddlambda_lower,ddlambda_upper,diagnostics] = ...
     calc_ddlambda1_bernstein_strong_bounds( ...
         triangle,e_direction,degree,spectral_options)
-%CALC_DDLAMBDA1_BERNSTEIN_STRONG_BOUNDS  Flux-free lambda_1 Hessian bound.
+%CALC_DDLAMBDA1_BERNSTEIN_STRONG_BOUNDS  Flux-free lambda_i Hessian bound.
 %
 % The trial space consists of the interior degree-p Bernstein polynomials
 % on one reference triangle.  These global polynomials belong to
@@ -28,6 +28,7 @@ if nargin < 4 || isempty(spectral_options)
     spectral_options = struct();
 end
 spectral_options = local_spectral_options(spectral_options);
+spectral_index = spectral_options.index;
 
 triangle = I_intval(triangle);
 e_direction = I_intval(e_direction);
@@ -75,17 +76,20 @@ Md = I_mid(M);
 trial_values = real(diag(trial_values));
 [trial_values,order] = sort(trial_values,'ascend');
 trial_vectors = real(trial_vectors(:,order));
-if numel(trial_values) < 2 || any(~isfinite(trial_values(1:2))) ...
-        || trial_values(1) <= 0
+num_trial_values = spectral_index+1;
+if numel(trial_values) < num_trial_values ...
+        || any(~isfinite(trial_values(1:num_trial_values))) ...
+        || any(trial_values(1:num_trial_values) <= 0)
     error('calc_ddlambda1_bernstein_strong_bounds:BadTrialSpectrum', ...
-        'The Bernstein trial eigenproblem did not return two positive values.');
+        ['The Bernstein trial eigenproblem did not return the required ', ...
+         'positive values.']);
 end
 
-raw_u_double = trial_vectors(:,1);
+raw_u_double = trial_vectors(:,spectral_index);
 mass_double = y0*(raw_u_double'*Md*raw_u_double);
 if ~(isfinite(mass_double) && mass_double > 0)
     error('calc_ddlambda1_bernstein_strong_bounds:BadTrialMass', ...
-        'The first Bernstein trial vector has non-positive mass.');
+        'The selected Bernstein trial vector has non-positive mass.');
 end
 u_double = raw_u_double/sqrt(mass_double);
 
@@ -169,39 +173,53 @@ rho_u = rho_u_anchor ...
     +local_abs_upper(mu-mu_anchor_I)*norm_u;
 rho_u = I_intval(I_sup(rho_u));
 
-% The eigenvalue endpoints are independent of the Hessian trial:
-%
-%   L_1^LG <= lambda_1 <= U_1^Ritz,
-%   L_2^CR <= lambda_2.
-%
-% They are computed on the midpoint triangle and transported uniformly to
-% the whole affine cell.  The Bernstein Rayleigh quotient may sharpen the
-% transported upper endpoint but is not used to create a lower endpoint.
+% The eigenvalue endpoints are independent of the Hessian trial and are
+% computed on the midpoint triangle before affine transport to the cell.
 ritz = verified_ritz_enclosures( ...
-    I_intval(trial_vectors(:,1:2)),K,M,2);
+    I_intval(trial_vectors(:,1:num_trial_values)),K,M,num_trial_values);
 [lambda_bounds,spectral_info] = local_spectral_endpoints( ...
     x,y,x0,y0,mu,ritz,spectral_options);
-lambda = lambda_bounds(1);
-lambda2_lower = I_intval(I_inf(lambda_bounds(2)));
+lambda = lambda_bounds(spectral_index);
+lambda_i_upper = I_intval(I_sup(lambda));
+lambda_ip1_lower = I_intval(I_inf( ...
+    lambda_bounds(spectral_index+1)));
+mu_lower = I_intval(I_inf(mu));
 mu_upper = I_intval(I_sup(mu));
-residual_gap = lambda2_lower-mu_upper;
-if ~(I_inf(residual_gap) > 0)
-    error('calc_ddlambda1_bernstein_strong_bounds:ResidualGapFailed', ...
-        ['The CR--Liu lower bound for lambda_2 must exceed the ', ...
-         'Bernstein Rayleigh quotient.  Refine the spectral mesh.']);
+gap_plus = lambda_ip1_lower-mu_upper;
+if spectral_index == 1
+    gap_minus = I_intval(Inf);
+else
+    lambda_im1_upper = I_intval(I_sup( ...
+        lambda_bounds(spectral_index-1)));
+    gap_minus = mu_lower-lambda_im1_upper;
 end
+if ~(I_inf(gap_plus) > 0) ...
+        || (spectral_index > 1 && ~(I_inf(gap_minus) > 0))
+    error('calc_ddlambda1_bernstein_strong_bounds:ResidualGapFailed', ...
+        ['The verified adjacent eigenvalue bounds do not separate the ', ...
+         'selected Bernstein Rayleigh quotient.']);
+end
+if spectral_index == 1
+    energy_factor_minus = I_intval(0);
+else
+    energy_factor_minus = lambda_im1_upper/gap_minus^2;
+end
+residual_gap = I_intval(min(I_inf(gap_minus),I_inf(gap_plus)));
 
 q0 = rho_u/residual_gap;
 if ~(I_sup(q0) < 1)
     error('calc_ddlambda1_bernstein_strong_bounds:EigenvectorAngleFailed', ...
         'The strong residual does not certify a singleton eigenvector.');
 end
-qa = sqrt(lambda2_lower)*rho_u/residual_gap;
+energy_factor_plus = lambda_ip1_lower/gap_plus^2;
+energy_factor = max(energy_factor_minus,energy_factor_plus);
+qa_sq = rho_u^2*energy_factor;
 % The rationalized form avoids cancellation when the trial is very
 % accurate: 1-sqrt(1-q0^2) = q0^2/(1+sqrt(1-q0^2)).
 phase_loss = q0^2/(I_intval(1)+sqrt(I_intval(1)-q0^2));
 eps_0 = I_intval(I_sup(sqrt(2*phase_loss)));
-eps_a = I_intval(I_sup(sqrt(qa^2+mu_upper*phase_loss^2)));
+eps_a = I_intval(I_sup(sqrt( ...
+    qa_sq+lambda_i_upper*phase_loss^2)));
 
 % The material strong residual is another polynomial norm.  The midpoint
 % bordered solve need not be verified: any solve error is part of rho_v.
@@ -226,7 +244,7 @@ rho_v = rho_v_anchor ...
 rho_v = I_intval(I_sup(rho_v));
 
 core_data = struct();
-core_data.i = 1;
+core_data.i = spectral_index;
 core_data.lambda_bounds = lambda_bounds;
 core_data.lambda_h = mu;
 core_data.P_e = P_e;
@@ -243,6 +261,7 @@ dlambda = I_hull(alpha-core.eps_alpha,alpha+core.eps_alpha);
 diagnostics = struct();
 diagnostics.estimator = ...
     'signed-strong-residual-with-global-Bernstein-bubbles';
+diagnostics.spectral_index = spectral_index;
 diagnostics.rigorous = logical(INTERVAL_MODE);
 diagnostics.enclosure_scope = ...
     local_scope_name(x,y);
@@ -263,12 +282,25 @@ diagnostics.trial_dimension = poly.dimension;
 diagnostics.lambda_bounds = lambda_bounds;
 diagnostics.lambda_h = mu;
 diagnostics.spectral_endpoints = spectral_info;
-diagnostics.lambda1_LG_lower = spectral_info.lambda1_LG_target_lower;
-diagnostics.lambda1_Ritz_upper = ...
-    spectral_info.lambda1_target_upper;
-diagnostics.lambda2_CR_lower = ...
-    spectral_info.lambda2_CR_target_lower;
+diagnostics.lambda_i_LG_lower = ...
+    spectral_info.lambda_LG_target_lower(spectral_index);
+diagnostics.lambda_i_Ritz_upper = ...
+    spectral_info.lambda_target_upper(spectral_index);
+diagnostics.lambda_ip1_lower = ...
+    spectral_info.lambda_next_target_lower;
+if spectral_index == 1
+    diagnostics.lambda1_LG_lower = ...
+        diagnostics.lambda_i_LG_lower;
+    diagnostics.lambda1_Ritz_upper = ...
+        diagnostics.lambda_i_Ritz_upper;
+    diagnostics.lambda2_CR_lower = ...
+        diagnostics.lambda_ip1_lower;
+end
 diagnostics.residual_gap = residual_gap;
+diagnostics.gap_minus = gap_minus;
+diagnostics.gap_plus = gap_plus;
+diagnostics.energy_factor_minus = energy_factor_minus;
+diagnostics.energy_factor_plus = energy_factor_plus;
 diagnostics.trial_ritz = ritz;
 diagnostics.eps_a = eps_a;
 diagnostics.eps_0 = eps_0;
@@ -357,7 +389,7 @@ if ~isstruct(options)
     error('calc_ddlambda1_bernstein_strong_bounds:BadSpectralOptions', ...
         'SPECTRAL_OPTIONS must be a struct.');
 end
-defaults = struct('N_LG',16,'N_rho',64,'bound_order',2);
+defaults = struct('N_LG',16,'N_rho',64,'bound_order',2,'index',1);
 names = fieldnames(defaults);
 for k = 1:numel(names)
     name = names{k};
@@ -377,11 +409,11 @@ end
 function [bounds,info] = local_spectral_endpoints( ...
     x,y,x0,y0,mu,bernstein_ritz,options)
 global INTERVAL_MODE
+index = options.index;
 if isfield(options,'reference_certificate') ...
         && ~isempty(options.reference_certificate)
     certificate = options.reference_certificate;
-    required = {'schema','lambda1_LG_lower','lambda1_Ritz_upper', ...
-        'lambda2_CR_lower','reference_triangle','rigorous'};
+    required = {'schema','reference_triangle','rigorous'};
     for k = 1:numel(required)
         if ~isfield(certificate,required{k})
             error( ...
@@ -395,12 +427,8 @@ if isfield(options,'reference_certificate') ...
             'calc_ddlambda1_bernstein_strong_bounds:BadSpectralCertificate', ...
             'Unsupported reference-certificate schema.');
     end
-    L1_reference = I_intval( ...
-        I_inf(certificate.lambda1_LG_lower));
-    U1_reference = I_intval( ...
-        I_sup(certificate.lambda1_Ritz_upper));
-    L2_reference = I_intval( ...
-        I_inf(certificate.lambda2_CR_lower));
+    [L_reference,U_reference,Lnext_reference,next_source] = ...
+        local_certificate_endpoints(certificate,index);
     if ~local_boolean_scalar(certificate.rigorous)
         error( ...
             'calc_ddlambda1_bernstein_strong_bounds:BadSpectralCertificate', ...
@@ -448,61 +476,126 @@ else
         I_intval([0,0,1,0,x_reference,y_reference]);
     spectral_reference = triangle_spectral_certificate_cr_lg( ...
         reference_triangle,options.N_LG, ...
-        options.N_rho,options.bound_order);
-    L1_reference = spectral_reference.lambda1_LG_lower;
-    U1_reference = spectral_reference.lambda1_Ritz_upper;
-    L2_reference = spectral_reference.lambda2_CR_lower;
+        options.N_rho,options.bound_order,index);
+    [L_reference,U_reference,Lnext_reference,next_source] = ...
+        local_certificate_endpoints(spectral_reference,index);
     certificate_rigorous = logical(spectral_reference.rigorous);
     mesh_used = logical(spectral_reference.mesh_used);
     method = spectral_reference.method;
 end
 
-if ~(I_inf(L1_reference) > 0) ...
-        || ~(I_inf(U1_reference) >= I_inf(L1_reference)) ...
-        || ~(I_inf(L2_reference) > I_sup(U1_reference))
+if any(I_inf(L_reference) <= 0) ...
+        || any(I_sup(U_reference) < I_inf(L_reference)) ...
+        || ~(I_inf(Lnext_reference) > I_sup(U_reference(index))) ...
+        || (index > 1 ...
+            && ~(I_inf(L_reference(index)) ...
+                 > I_sup(U_reference(index-1))))
     error('calc_ddlambda1_bernstein_strong_bounds:BadSpectralCertificate', ...
-        ['The reference endpoints must satisfy ', ...
-         '0<L_1^{LG}<=U_1^{Ritz}<L_2^{CR}.']);
+        ['The reference endpoints do not certify the selected ', ...
+         'eigenvalue as simple.']);
 end
 
 S_inv = [I_intval(1),(x_reference-x)/y; ...
          I_intval(0),y_reference/y];
 [qmin,qmax] = local_affine_metric_factors(S_inv);
-L1_target = I_intval(I_inf(qmin*L1_reference));
-U1_transport = I_intval(I_sup(qmax*U1_reference));
-% The normalized Bernstein Rayleigh quotient is the cellwise conforming
-% Ritz upper bound used by both the residual-separation lemma and the
-% Hessian core.  U1_transport is retained only as an independent audit.
-U1_target = I_intval(I_sup(mu));
-L2_target = I_intval(I_inf(qmin*L2_reference));
-U2_target = I_intval(I_sup(bernstein_ritz(2)));
-if ~(I_inf(L1_target) > 0) ...
-        || I_inf(L1_target) > I_sup(U1_target) ...
-        || I_inf(L2_target) > I_sup(U2_target)
+L_target = I_intval(zeros(index,1));
+U_transport = I_intval(zeros(index,1));
+U_target = I_intval(zeros(index,1));
+for k = 1:index
+    L_target(k) = I_intval(I_inf(qmin*L_reference(k)));
+    U_transport(k) = I_intval(I_sup(qmax*U_reference(k)));
+    U_target(k) = I_intval(min( ...
+        I_sup(U_transport(k)),I_sup(bernstein_ritz(k))));
+end
+if index == 1
+    U_target(1) = I_intval(min(I_sup(U_target(1)),I_sup(mu)));
+end
+Lnext_target = I_intval(I_inf(qmin*Lnext_reference));
+Unext_target = I_intval(I_sup(bernstein_ritz(index+1)));
+if any(I_inf(L_target) <= 0) ...
+        || any(I_inf(L_target) > I_sup(U_target)) ...
+        || I_inf(Lnext_target) > I_sup(Unext_target) ...
+        || ~(I_inf(Lnext_target) > I_sup(U_target(index))) ...
+        || (index > 1 ...
+            && ~(I_inf(L_target(index)) ...
+                 > I_sup(U_target(index-1))))
     error('calc_ddlambda1_bernstein_strong_bounds:TransportedSpectrumInvalid', ...
-        'The transported CR--LG--Ritz endpoints are inconsistent.');
+        ['The transported endpoints do not certify the selected ', ...
+         'eigenvalue as simple.']);
 end
 
-bounds = [ ...
-    I_infsup(I_inf(L1_target),I_sup(U1_target)); ...
-    I_infsup(I_inf(L2_target),I_sup(U2_target))];
+bounds = I_intval(zeros(index+1,1));
+for k = 1:index
+    bounds(k) = I_infsup(I_inf(L_target(k)),I_sup(U_target(k)));
+end
+bounds(index+1) = ...
+    I_infsup(I_inf(Lnext_target),I_sup(Unext_target));
 info = struct();
 info.method = method;
 info.rigorous = certificate_rigorous;
+info.index = index;
 info.mesh_used = mesh_used;
 info.reference_triangle = reference_triangle;
 info.reference_certificate = spectral_reference;
 info.S_inv = S_inv;
 info.metric_factor_lower = qmin;
 info.metric_factor_upper = qmax;
-info.lambda1_LG_reference_lower = L1_reference;
-info.lambda1_Ritz_reference_upper = U1_reference;
-info.lambda2_CR_reference_lower = L2_reference;
-info.lambda1_LG_target_lower = L1_target;
-info.lambda1_transport_upper = U1_transport;
-info.lambda1_target_upper = U1_target;
-info.lambda2_CR_target_lower = L2_target;
-info.lambda2_Bernstein_Ritz_upper = U2_target;
+info.lambda_LG_reference_lower = L_reference;
+info.lambda_Ritz_reference_upper = U_reference;
+info.lambda_next_reference_lower = Lnext_reference;
+info.lambda_next_reference_source = next_source;
+info.lambda_LG_target_lower = L_target;
+info.lambda_transport_upper = U_transport;
+info.lambda_target_upper = U_target;
+info.lambda_next_target_lower = Lnext_target;
+info.lambda_next_Bernstein_Ritz_upper = Unext_target;
+if index == 1
+    info.lambda1_LG_reference_lower = L_reference(1);
+    info.lambda1_Ritz_reference_upper = U_reference(1);
+    info.lambda2_CR_reference_lower = Lnext_reference;
+    info.lambda1_LG_target_lower = L_target(1);
+    info.lambda1_transport_upper = U_transport(1);
+    info.lambda1_target_upper = U_target(1);
+    info.lambda2_CR_target_lower = Lnext_target;
+    info.lambda2_Bernstein_Ritz_upper = Unext_target;
+end
+end
+
+
+function [L,U,Lnext,next_source] = ...
+    local_certificate_endpoints(certificate,index)
+if isfield(certificate,'lambda_LG_lower') ...
+        && isfield(certificate,'lambda_Ritz_upper')
+    L_all = I_intval(certificate.lambda_LG_lower(:));
+    U_all = I_intval(certificate.lambda_Ritz_upper(:));
+elseif index == 1 ...
+        && isfield(certificate,'lambda1_LG_lower') ...
+        && isfield(certificate,'lambda1_Ritz_upper')
+    L_all = I_intval(certificate.lambda1_LG_lower);
+    U_all = I_intval(certificate.lambda1_Ritz_upper);
+else
+    error('calc_ddlambda1_bernstein_strong_bounds:BadSpectralCertificate', ...
+        'The certificate lacks indexed LG/Ritz endpoints.');
+end
+if length(L_all) < index || length(U_all) < index
+    error('calc_ddlambda1_bernstein_strong_bounds:BadSpectralCertificate', ...
+        'The certificate does not reach the requested spectral index.');
+end
+L = I_intval(I_inf(L_all(1:index)));
+U = I_intval(I_sup(U_all(1:index)));
+if length(L_all) >= index+1
+    Lnext = I_intval(I_inf(L_all(index+1)));
+    next_source = 'LG-lower-endpoint';
+elseif isfield(certificate,'lambda_next_CR_lower')
+    Lnext = I_intval(I_inf(certificate.lambda_next_CR_lower));
+    next_source = 'CR-Liu-lower-endpoint';
+elseif index == 1 && isfield(certificate,'lambda2_CR_lower')
+    Lnext = I_intval(I_inf(certificate.lambda2_CR_lower));
+    next_source = 'CR-Liu-lower-endpoint';
+else
+    error('calc_ddlambda1_bernstein_strong_bounds:BadSpectralCertificate', ...
+        'The certificate lacks a lower endpoint for lambda_{i+1}.');
+end
 end
 
 
