@@ -1,0 +1,32 @@
+{
+  "mode": "interval",
+  "rigor": "certified_interval_rayleigh_upper",
+  "t": 0.38,
+  "degree": 10,
+  "s_cells": 200,
+  "s_domain": [
+    0,
+    1
+  ],
+  "max_rayleigh_upper": 14.049354897039173,
+  "max_midpoint_ritz": 14.019377516133071,
+  "max_cell_id": 200,
+  "max_cell": [
+    0.995,
+    1
+  ],
+  "target_11_5_verified": false,
+  "down_y_max": 0.19,
+  "down_y_cells": 40,
+  "max_down_scaled_upper": -1.5240735212108216,
+  "max_down_cell_id": 131,
+  "max_down_cell": [
+    0.65,
+    0.655
+  ],
+  "down_conjecture_verified": true,
+  "matlab_version": "23.2.0.2459199 (R2023b) Update 5",
+  "computer": "GLNXA64",
+  "intlab_root": "/home/rendo/Code_Endo/Intlab_Group/Intlab_V12_typeY_valid_20260730/Intlab_V12",
+  "generated_utc": "2026-07-30T13:25:05Z"
+}
