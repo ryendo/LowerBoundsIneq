@@ -1,0 +1,87 @@
+{
+  "schema": "lowerboundsineq.upper_conjecture.v1",
+  "created_utc": "2026-07-28T09:09:27Z",
+  "mode": "interval",
+  "rigor": "certified_interval",
+  "source": {
+    "git_commit": "2f35742ab56ef999aecb215daed69c5b49fc3544",
+    "git_status_available": true,
+    "git_dirty": false,
+    "git_status_porcelain": "",
+    "provenance_captured_before_run": true,
+    "provenance_rechecked_after_run": true,
+    "git_commit_after_run": "2f35742ab56ef999aecb215daed69c5b49fc3544",
+    "git_dirty_after_run": false,
+    "source_unchanged_after_run": true
+  },
+  "runtime": {
+    "engine": "MATLAB",
+    "engine_version": "23.2.0.2459199 (R2023b) Update 5",
+    "release": "2023b",
+    "computer": "GLNXA64",
+    "interval_toolbox": "INTLAB",
+    "intlab_root_name": "LowerBoundsIneq-ver10-intlab-v12",
+    "startintlab_file": "startintlab.m",
+    "intval_constructor_file": "intval.m",
+    "startintlab_sha256": "58ae5e42f6aff4de271e6f837478d74504a952c57acd00904ce429b4fe176ecd",
+    "intval_constructor_sha256": "d8414e23b11636f615e8f364721a4cefe8b81792d7d3d3969eefa44367f22979",
+    "gmsh_executable": "gmsh",
+    "gmsh_version_status": 0,
+    "gmsh_version": "4.8.4",
+    "gmsh_binary_sha256": "21ee9676ee08261883d578a7c50707bf1bc9b51bbd6adbfadbb8a7d30e5d4d31"
+  },
+  "theorem": "lambda1 <= pi^2 L^2/(12 A^2) + sqrt(3) pi^2/(3 A)",
+  "normalization": "T(x,y)=conv{(0,0),(1,0),(x,y)}, A=y/2",
+  "thin": {
+    "region": "thin_sector",
+    "mode": "interval",
+    "rigor": "certified_interval",
+    "y_min": 0,
+    "y_max": 0.059999999999999998,
+    "scaled_trial_lower": 9.8666399598737443,
+    "scaled_trial_upper": 12.989595783738289,
+    "scaled_target_lower": 13.159472534785808,
+    "scaled_target_upper": 13.843258785717505,
+    "scaled_margin_lower": 0.16987675104751965,
+    "scaled_margin_upper": 3.9766188258437599,
+    "verified": true
+  },
+  "atlas": {
+    "y_min": 0.059999999999999998,
+    "y_up": 0.85099999999999998,
+    "x_min": 0.5,
+    "curved_boundary": "rectangular_superset_cover",
+    "dx": 0.0010000000000000001,
+    "dy": 0.0010000000000000001,
+    "backend": "p4",
+    "mesh_order": 4,
+    "trial_resolution": 8,
+    "number_of_cells": 277572,
+    "cover_generation_complete": true,
+    "minimum_margin_lower": 2.773406173963496E-5,
+    "number_verified": 277572,
+    "all_verified": true
+  },
+  "component_complete_certificate": true,
+  "component_certificate_scope": "normalized triangles with 0 < y <= 0.85099999999999998",
+  "connection": {
+    "residual_y_start": 0.84999999999999998,
+    "atlas_y_end": 0.85099999999999998,
+    "overlap_y": [
+      0.84999999999999998,
+      0.85099999999999998
+    ],
+    "required_external_certificate": "Omega_up residual Jup certificate through the equilateral point"
+  },
+  "complete_certificate": false,
+  "complete_certificate_reason": "This component manifest deliberately does not assert the global theorem; combine it with the overlapping residual manifest.",
+  "files": {
+    "cells_csv": "external-output/upper_atlas_interval_20260728_162102.csv",
+    "manifest_json": "external-output/upper_manifest_interval_20260728_162102.json"
+  },
+  "hashes": {
+    "algorithm": "SHA-256",
+    "cells_csv": "a8fc39c8a5a38c8fb6e4ee926261e3952281f183f1371b96e42c95bee2787074"
+  },
+  "warning": ""
+}

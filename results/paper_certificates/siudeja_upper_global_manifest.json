@@ -1,0 +1,42 @@
+{
+  "schema": "lowerboundsineq.siudeja-upper-global.manifest.v1",
+  "theorem": "lambda1(T) <= pi^2*P(T)^2/(12*A(T)^2) +sqrt(3)*pi^2/(3*A(T)) for every triangle T",
+  "rigor": "certified_interval",
+  "complete_certificate": true,
+  "git_commit": "2f35742ab56ef999aecb215daed69c5b49fc3544",
+  "cover": {
+    "thin_and_compact_y_end": 0.851,
+    "residual_y_start": 0.84996290378443851,
+    "overlap": [
+      0.84996290378443851,
+      0.851
+    ]
+  },
+  "margins": {
+    "thin_scaled_lower": 0.16987675104751965,
+    "compact_lower": 2.7734061739634959E-5,
+    "residual_JUP_upper": -0.35128272874273136
+  },
+  "inputs": {
+    "compact_manifest_sha256": "8715b983dce1b5c43a885ef7f1f4fbb568dbe12da55c5a9ce68d848fd7b36933",
+    "residual_manifest_sha256": "f375badbb4e92148774e6953c9d2b3ee8c15fb24797cc4bce145572b7d61f1ed",
+    "compact_csv_sha256": "a8fc39c8a5a38c8fb6e4ee926261e3952281f183f1371b96e42c95bee2787074",
+    "residual_csv_sha256": "4f2037c3add9f0572d45e780e021d652e6bec18888cdb77899ee3f582547ca4e"
+  },
+  "runtime": {
+    "engine": "MATLAB",
+    "engine_version": "23.2.0.2459199 (R2023b) Update 5",
+    "release": "2023b",
+    "computer": "GLNXA64",
+    "interval_toolbox": "INTLAB",
+    "intlab_root_name": "project-local Intlab_V12 fallback",
+    "startintlab_file": "",
+    "intval_constructor_file": "",
+    "startintlab_sha256": "",
+    "intval_constructor_sha256": "",
+    "gmsh_executable": "gmsh",
+    "gmsh_version_status": 0,
+    "gmsh_version": "4.8.4",
+    "gmsh_binary_sha256": "21ee9676ee08261883d578a7c50707bf1bc9b51bbd6adbfadbb8a7d30e5d4d31"
+  }
+}

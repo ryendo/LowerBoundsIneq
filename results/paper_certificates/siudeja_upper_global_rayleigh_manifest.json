@@ -1,0 +1,22 @@
+{
+  "schema": "lowerboundsineq.siudeja-upper-global-rayleigh.manifest.v1",
+  "theorem": "lambda1(T) <= pi^2*P(T)^2/(12*A(T)^2) + sqrt(3)*pi^2/(3*A(T)) for every triangle T",
+  "rigor": "certified_interval",
+  "complete_certificate": true,
+  "cover": {
+    "thin_rayleigh_y_interval": [0.0, 0.19],
+    "affine_atlas_y_interval_used": [0.19, 0.851],
+    "residual_y_interval": [0.8499629037844385, 0.8660254037844386],
+    "atlas_residual_overlap": [0.8499629037844385, 0.851]
+  },
+  "margins": {
+    "thin_scaled_upper": -1.5240735212108216,
+    "affine_atlas_lower": 2.773406173963496e-05,
+    "residual_functional_upper": -0.35128272874273136
+  },
+  "components": {
+    "thin_rayleigh": "../muhat1_rayleigh_t038_hpc_20260730/summary.json",
+    "affine_atlas": "upper_affine_atlas/upper_manifest_interval_20260728_162102.json",
+    "residual": "omega_up_residual/omega_up_all_manifest.json"
+  }
+}
