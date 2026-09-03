@@ -15,5 +15,16 @@ global INTERVAL_MODE;
 INTERVAL_MODE=1;
 
 if INTERVAL_MODE == 1
-    startintlab;
+    project_root = fileparts(fileparts(fileparts( ...
+        fileparts(mfilename('fullpath')))));
+    addpath(fullfile(project_root,'scripts_run'));
+    intlab_root = fileparts(which('startintlab'));
+    intlab_lock = ver10_acquire_intlab_init_lock(intlab_root);
+    try
+        startintlab;
+        clear intlab_lock
+    catch ME
+        clear intlab_lock
+        rethrow(ME);
+    end
 end

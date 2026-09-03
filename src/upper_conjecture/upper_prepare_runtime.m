@@ -8,6 +8,7 @@ addpath(fullfile(project_root, 'src', 'mesh'));
 addpath(fullfile(project_root, 'src', 'lib', 'VFEM2D', 'lib_eigenvalue_bound'));
 addpath(fullfile(project_root, 'src', 'lib', 'VFEM2D_revised'));
 addpath(fullfile(project_root, 'src', 'lib', 'veigs'));
+addpath(fullfile(project_root, 'scripts_run'));
 
 global INTERVAL_MODE gmsh_command mesh_path
 INTERVAL_MODE = 0;
@@ -40,7 +41,9 @@ if ~isfolder(intlab_root)
            '(for example /path/to/Intlab_V12).']);
 end
 addpath(intlab_root);
+intlab_lock = ver10_acquire_intlab_init_lock(intlab_root);
 evalc('startintlab');
+clear intlab_lock
 interval_ready = true;
 INTERVAL_MODE = 1;
 end

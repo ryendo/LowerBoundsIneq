@@ -31,8 +31,17 @@ runtime.intval_constructor_sha256 = local_file_sha256( ...
 if isempty(intlab_root) && ~isempty(startintlab_path)
     intlab_root = fileparts(startintlab_path);
 end
+intlab_data_relative_names = local_intlab_data_relative_names(intlab_root);
 [runtime.intlab_tree_sha256,runtime.intlab_tree_file_count, ...
-    runtime.intlab_tree_total_bytes] = local_directory_sha256(intlab_root);
+    runtime.intlab_tree_total_bytes,normalized_records] = ...
+    ver10_directory_sha256(intlab_root,intlab_data_relative_names, ...
+        @() ver10_acquire_intlab_init_lock(intlab_root));
+runtime.intlab_tree_hash_policy = [ ...
+    'recursive-path-size-content-sha256-v2-with-exact-intlab-data-', ...
+    'mat-v5-created-on-timestamp-normalization'];
+runtime.intlab_data_mat_records = normalized_records;
+runtime.intlab_data_mat_write_serialization = ...
+    'java-nio-advisory-lock-adjacent-to-intlab-root-v1';
 global gmsh_command
 gmsh = gmsh_command;
 if isempty(gmsh)
@@ -67,79 +76,90 @@ end
 end
 
 
-function [digest,file_count,total_bytes] = local_directory_sha256(directory)
-% Bind the complete trusted INTLAB installation, not only two entry files.
-digest = '';
-file_count = 0;
-total_bytes = 0;
-if isempty(directory) || ~isfolder(directory)
+function relative_names = local_intlab_data_relative_names(intlab_root)
+% Identify the exact platform-data MAT written and loaded by INTLAB.  Its
+% serialized INTLAB_CONST payload is proof-critical and remains hashed;
+% only the timestamp-bearing MAT-v5 description is normalized downstream.
+relative_names = {};
+if isempty(intlab_root) || ~isfolder(intlab_root)
     return
 end
 
-entries = dir(fullfile(directory,'**','*'));
-entries = entries(~[entries.isdir]);
-if isempty(entries)
-    return
-end
-full_names = arrayfun(@(entry) fullfile(entry.folder,entry.name), ...
-    entries,'UniformOutput',false);
-root_prefix = [char(directory),filesep];
-relative_names = full_names;
-for k = 1:numel(relative_names)
-    local_name = relative_names{k};
-    if ~startsWith(local_name,root_prefix)
-        error('ver10_runtime_metadata:BadIntlabTreeEntry', ...
-            'INTLAB tree entry is outside the recorded root: %s',local_name);
+candidate = '';
+if exist('intvalinit','file') == 2
+    try
+        candidate = char(intvalinit('intlabdata'));
+    catch ME
+        error('ver10_runtime_metadata:IntlabDataLookupFailed', ...
+            'INTLAB data MAT lookup failed: %s',ME.message);
     end
-    relative_names{k} = strrep( ...
-        local_name(numel(root_prefix)+1:end),filesep,'/');
 end
-[relative_names,order] = sort(relative_names);
-full_names = full_names(order);
-entries = entries(order);
+if isempty(candidate)
+    if exist('OCTAVE_VERSION','builtin')
+        prefix = ['Octave_',version,'_Intlab_Version_'];
+    else
+        prefix = ['Matlab_',version,'_Intlab_Version_'];
+    end
+    entries = dir(fullfile(intlab_root,[prefix,'*.mat']));
+    entries = entries(~[entries.isdir]);
+    if numel(entries) == 1
+        candidate = fullfile(entries(1).folder,entries(1).name);
+    elseif numel(entries) > 1
+        error('ver10_runtime_metadata:AmbiguousIntlabData', ...
+            'Multiple current-runtime INTLAB data MAT files were found.');
+    end
+end
+if isempty(candidate)
+    return
+end
 
+[candidate_parent,stem,extension] = fileparts(candidate);
+candidate_name = [stem,extension];
+if exist('OCTAVE_VERSION','builtin')
+    exact_prefix = ['Octave_',version,'_Intlab_Version_'];
+else
+    exact_prefix = ['Matlab_',version,'_Intlab_Version_'];
+end
+matching = dir(fullfile(intlab_root,[exact_prefix,'*.mat']));
+matching = matching(~[matching.isdir]);
+if ~local_same_directory(candidate_parent,intlab_root) ...
+        || ~local_is_unsymlinked_root_child(candidate,intlab_root, ...
+            candidate_name) ...
+        || ~startsWith(candidate_name,exact_prefix) ...
+        || ~endsWith(candidate_name,'.mat') ...
+        || numel(matching) ~= 1 ...
+        || ~strcmp(matching(1).name,candidate_name) ...
+        || ~isfile(candidate)
+    error('ver10_runtime_metadata:BadIntlabDataPath', ...
+        ['INTLAB reported an invalid platform-data MAT path; refusing ', ...
+         'to normalize any tree entry.']);
+end
+relative_names = {candidate_name};
+end
+
+
+function tf = local_same_directory(first,second)
 try
-    engine = javaMethod( ...
-        'getInstance','java.security.MessageDigest','SHA-256');
-catch ME
-    error('ver10_runtime_metadata:NoSHA256', ...
-        'Cannot initialize the SHA-256 engine: %s',ME.message);
+    first_file = javaObject('java.io.File',char(first));
+    second_file = javaObject('java.io.File',char(second));
+    tf = strcmp(char(first_file.getCanonicalPath()), ...
+        char(second_file.getCanonicalPath()));
+catch
+    tf = strcmp(char(first),char(second));
 end
-local_digest_update(engine,uint8('ver10-directory-sha256-v1'));
-local_digest_update(engine,uint8(0));
-for k = 1:numel(full_names)
-    path_bytes = unicode2native(relative_names{k},'UTF-8');
-    size_bytes = uint8(sprintf('%d',entries(k).bytes));
-    local_digest_update(engine,path_bytes);
-    local_digest_update(engine,uint8(0));
-    local_digest_update(engine,size_bytes);
-    local_digest_update(engine,uint8(0));
-
-    fid = fopen(full_names{k},'rb');
-    if fid < 0
-        error('ver10_runtime_metadata:CannotHashIntlabFile', ...
-            'Cannot open INTLAB tree file %s.',full_names{k});
-    end
-    cleanup = onCleanup(@() fclose(fid));
-    while true
-        bytes = fread(fid,1024*1024,'*uint8');
-        if isempty(bytes)
-            break
-        end
-        local_digest_update(engine,bytes);
-    end
-    clear cleanup
-    local_digest_update(engine,uint8(0));
-end
-raw = typecast(engine.digest(),'uint8');
-digest = lower(reshape(dec2hex(raw,2).',1,[]));
-file_count = numel(entries);
-total_bytes = sum(double([entries.bytes]));
 end
 
 
-function local_digest_update(engine,bytes)
-engine.update(typecast(uint8(bytes(:)),'int8'));
+function tf = local_is_unsymlinked_root_child(candidate,root,name)
+try
+    root_file = javaObject('java.io.File',char(root));
+    candidate_file = javaObject('java.io.File',char(candidate));
+    expected = fullfile(char(root_file.getCanonicalPath()),char(name));
+    tf = candidate_file.isFile() ...
+        && strcmp(char(candidate_file.getCanonicalPath()),expected);
+catch
+    tf = false;
+end
 end
 
 

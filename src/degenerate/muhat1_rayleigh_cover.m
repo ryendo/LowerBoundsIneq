@@ -578,8 +578,12 @@ intlab_root = getenv('INTLAB_ROOT');
 if isempty(intlab_root)
     error('Set INTLAB_ROOT to the external INTLAB installation.');
 end
+project_root = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+addpath(fullfile(project_root,'scripts_run'));
 addpath(intlab_root);
+intlab_lock = ver10_acquire_intlab_init_lock(intlab_root);
 evalc('startintlab');
+clear intlab_lock
 if exist('intval', 'file') ~= 2
     error('INTLAB initialization failed.');
 end

@@ -37,6 +37,16 @@ canonical result files during production, so a production restart checks
 the pinned commit and leaves the driver's hash-bound publication journal to
 validate or recover that state.
 
+INTLAB stores proof-critical `INTLAB_CONST` data in a shared platform MAT
+file and rewrites that file at every `startintlab` call.  All client and
+worker initializations therefore take an interprocess Java NIO lock beside
+the INTLAB root.  Runtime provenance hashes the complete INTLAB tree and
+the complete platform MAT payload; it normalizes only the 24-character
+`Created on` timestamp in the strictly validated MAT-v5 header.  The exact
+relative filename, byte count, normalization policy, and normalized MAT
+SHA-256 are included in the runtime record.  Platform text, MAT control
+bytes, serialized constants, and every other INTLAB file remain bound.
+
 The production script refuses to start unless at least 40 GiB of tmpfs
 scratch and 600,000 free tmpfs inodes remain.  Because tmpfs consumes the
 same physical memory, the memory and scratch budgets are not independent.

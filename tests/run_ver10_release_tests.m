@@ -10,6 +10,9 @@ if ~strcmp(getenv('RUN_INTLAB_SMOKE'),'1')
 end
 omega_up_all_prepare_worker(project_root,'interval');
 
+test_runtime_tree_hash_policy;
+test_intlab_init_lock_alias;
+test_runtime_metadata_stability;
 test_verified_ritz_enclosures(true);
 test_cell_lower_eig_bound;
 test_residual_hessian_estimator_double(true);

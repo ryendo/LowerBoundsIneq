@@ -3,14 +3,14 @@ function test_worker_runtime_binding()
 
 project_root = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(project_root,'scripts_run'));
-omega_up_all_prepare_worker(project_root,'double');
+omega_up_all_prepare_worker(project_root,'interval');
 
 trusted = ver10_runtime_metadata();
 trusted_sha256 = local_sha256_bytes(uint8(jsonencode(trusted)));
 pool = ver10_ensure_local_pool(2);
 cleanup = onCleanup(@() local_delete_pool(pool));
 initialization = parfevalOnAll( ...
-    pool,@omega_up_all_prepare_worker,0,project_root,'double');
+    pool,@omega_up_all_prepare_worker,0,project_root,'interval');
 wait(initialization);
 fetchOutputs(initialization);
 

@@ -68,9 +68,14 @@ function my_intlab_config()
     addpath(fullfile(project_root, 'scripts_run'));
     addpath(project_root);
 
+    % STARTINTLAB loads and then rewrites a shared MAT file containing
+    % proof-critical INTLAB_CONST data.  Serialize this section across
+    % clients and parpool workers so no process can observe a partial save.
+    intlab_lock = ver10_acquire_intlab_init_lock(intlab_root);
     try
         evalc('startintlab');
         INTERVAL_MODE = 1;
+        clear intlab_lock
         fprintf('INTLAB initialized.\n');
         fprintf('Project root: %s\n', project_root);
         fprintf('INTLAB root: %s\n', intlab_root);
