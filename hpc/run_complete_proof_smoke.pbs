@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+#PBS -S /bin/bash
+#PBS -N phanuel-smoke
+#PBS -q normal
+#PBS -l nodes=1:ppn=2
+#PBS -l mem=32gb
+#PBS -l walltime=04:00:00
+#PBS -o /dev/shm/rendo-phanuel-20260903-104720-complete-proof/state/smoke.stdout
+#PBS -e /dev/shm/rendo-phanuel-20260903-104720-complete-proof/state/smoke.stderr
+
+set -euo pipefail
+umask 077
+cd "$PBS_O_WORKDIR"
+
+SCRATCH_ROOT="/dev/shm/rendo-phanuel-20260903-104720-complete-proof"
+STATE_DIR="$SCRATCH_ROOT/state"
+SOURCE_DIR="$SCRATCH_ROOT/source"
+export INTLAB_ROOT="/home/rendo/tmp/Intlab_V12_nqc_01"
+export GMSH_COMMAND="/usr/bin/gmsh"
+export RUN_INTLAB_SMOKE=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export VER10_PARALLEL_JOB_STORAGE="$SCRATCH_ROOT/matlab-job-storage-smoke"
+export MATLAB_PREFDIR="$STATE_DIR/matlab-prefs-smoke"
+export TMPDIR="$SCRATCH_ROOT/tmp-smoke"
+
+test -n "${PBS_JOBID:-}"
+test -n "${PBS_NODEFILE:-}"
+test -r "$PBS_NODEFILE"
+test -d "$SCRATCH_ROOT"
+test "$(stat -c '%u' "$SCRATCH_ROOT")" = "$(id -u)"
+test "$(stat -c '%a' "$SCRATCH_ROOT")" = 700
+test "$(stat -f -c '%T' "$SCRATCH_ROOT")" = tmpfs
+test "$(readlink -f "$PBS_O_WORKDIR")" = "$STATE_DIR"
+test -d "$SOURCE_DIR/.git"
+test -f "$INTLAB_ROOT/startintlab.m"
+test -x "$GMSH_COMMAND"
+mkdir -p "$STATE_DIR" "$MATLAB_PREFDIR" "$TMPDIR" \
+  "$VER10_PARALLEL_JOB_STORAGE"
+
+ALLOCATED_SLOTS="$(wc -l < "$PBS_NODEFILE")"
+ALLOCATED_NODES="$(sort -u "$PBS_NODEFILE" | wc -l)"
+if (( ALLOCATED_SLOTS < 2 || ALLOCATED_NODES != 1 )); then
+  printf 'Expected one node and at least two slots; got nodes=%s slots=%s.\n' \
+    "$ALLOCATED_NODES" "$ALLOCATED_SLOTS" >&2
+  exit 75
+fi
+
+exec 9> "$STATE_DIR/complete-proof.lock"
+if ! /usr/bin/flock -n 9; then
+  printf 'Another complete-proof wrapper is using %s.\n' "$SCRATCH_ROOT" >&2
+  exit 75
+fi
+
+cd "$SOURCE_DIR"
+SOURCE_STATUS_BEFORE="$(git status --porcelain=v1 --untracked-files=all)"
+test -z "$SOURCE_STATUS_BEFORE"
+CURRENT_SOURCE_COMMIT="$(git rev-parse --verify HEAD)"
+PINNED_SOURCE_COMMIT_FILE="$STATE_DIR/staged-source-commit.txt"
+if test -e "$PINNED_SOURCE_COMMIT_FILE"; then
+  test -f "$PINNED_SOURCE_COMMIT_FILE"
+  test ! -L "$PINNED_SOURCE_COMMIT_FILE"
+  test "$(wc -l < "$PINNED_SOURCE_COMMIT_FILE")" = 1
+  test "$(sed -n '1p' "$PINNED_SOURCE_COMMIT_FILE")" \
+    = "$CURRENT_SOURCE_COMMIT"
+else
+  PINNED_SOURCE_COMMIT_STAGE="$(mktemp "$STATE_DIR/.source-commit.XXXXXX")"
+  printf '%s\n' "$CURRENT_SOURCE_COMMIT" > "$PINNED_SOURCE_COMMIT_STAGE"
+  mv "$PINNED_SOURCE_COMMIT_STAGE" "$PINNED_SOURCE_COMMIT_FILE"
+fi
+printf '%s\n' "$CURRENT_SOURCE_COMMIT" > "$STATE_DIR/smoke-source-commit.txt"
+SMOKE_STARTED_STAGE="$(mktemp "$STATE_DIR/.smoke-started.XXXXXX")"
+{
+  printf 'source_commit=%s\n' "$CURRENT_SOURCE_COMMIT"
+  printf 'pbs_job_id=%s\n' "$PBS_JOBID"
+  printf 'started_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$SMOKE_STARTED_STAGE"
+mv "$SMOKE_STARTED_STAGE" "$STATE_DIR/smoke-started.txt"
+
+SMOKE_TIME="$STATE_DIR/smoke-${PBS_JOBID}.time"
+SMOKE_LOG="$STATE_DIR/smoke-${PBS_JOBID}.log"
+/usr/bin/time -v -o "$SMOKE_TIME" \
+  /usr/local/bin/matlab -batch "run('tests/run_ver10_release_tests.m')" \
+  > "$SMOKE_LOG" 2>&1
+
+SOURCE_STATUS_AFTER="$(git status --porcelain=v1 --untracked-files=all)"
+test -z "$SOURCE_STATUS_AFTER"
+SMOKE_COMPLETE_STAGE="$(mktemp "$STATE_DIR/.smoke-complete.XXXXXX")"
+printf '%s\n' "release suite passed at $CURRENT_SOURCE_COMMIT" \
+  > "$SMOKE_COMPLETE_STAGE"
+mv "$SMOKE_COMPLETE_STAGE" "$STATE_DIR/smoke-complete.txt"
+SMOKE_COMPLETE_HASH_STAGE="$(mktemp "$STATE_DIR/.smoke-complete-sha.XXXXXX")"
+(
+  cd "$SCRATCH_ROOT"
+  sha256sum \
+    state/smoke-started.txt \
+    state/smoke-source-commit.txt \
+    state/smoke-complete.txt \
+    "state/smoke-${PBS_JOBID}.time" \
+    "state/smoke-${PBS_JOBID}.log"
+) > "$SMOKE_COMPLETE_HASH_STAGE"
+mv "$SMOKE_COMPLETE_HASH_STAGE" "$STATE_DIR/smoke-complete.sha256"
+(cd "$SCRATCH_ROOT" && sha256sum -c state/smoke-complete.sha256)

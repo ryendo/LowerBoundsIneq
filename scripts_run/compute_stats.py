@@ -1,20 +1,41 @@
 #!/usr/bin/env python3
-"""Compute summary statistics over the final verification CSVs.
-Reads results/J{1,2}_OmegaMid.csv and writes results/verification_summary.json and results/verification_summary.md.
+"""Compute summary statistics over verification CSVs.
+
+Paths default to the canonical files below ``results/``; explicit path
+arguments let the production wrapper build and validate an immutable
+generation completely before replacing those canonical files.
 
 All J_lower values are reported with full 17-digit precision (the format used
 in the source CSVs), preserving the rigorous numerical content so that the
 summary statistics are reproducible from the raw data.
 """
-import csv, json, math, os
+import argparse
+import csv
+import json
+import math
+import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--j1', default=os.path.join(
+    ROOT, 'results', 'J1_OmegaMid.csv'))
+parser.add_argument('--j2', default=os.path.join(
+    ROOT, 'results', 'J2_OmegaMid.csv'))
+parser.add_argument('--input', default=os.path.join(
+    ROOT, 'inputs', 'cell_def.csv'))
+parser.add_argument('--summary-json', default=os.path.join(
+    ROOT, 'results', 'verification_summary.json'))
+parser.add_argument('--summary-markdown', default=os.path.join(
+    ROOT, 'results', 'verification_summary.md'))
+args = parser.parse_args()
+
 def load(conj):
-    with open(os.path.join(ROOT, 'results', conj+'_OmegaMid.csv')) as f:
+    filename = args.j1 if conj == 'J1' else args.j2
+    with open(filename) as f:
         return list(csv.DictReader(f))
 
-with open(os.path.join(ROOT, 'inputs', 'cell_def.csv')) as f:
+with open(args.input) as f:
     expected_rows = list(csv.DictReader(f))
 expected_ids = [int(row['i']) for row in expected_rows]
 expected_id_set = set(expected_ids)
@@ -105,7 +126,7 @@ summary['overall'] = {
     'expected_cell_count': len(expected_ids),
 }
 
-with open(os.path.join(ROOT, 'results', 'verification_summary.json'), 'w') as f:
+with open(args.summary_json, 'w') as f:
     json.dump(summary, f, indent=2, allow_nan=False)
 
 lines = ['# Verification Summary', '']
@@ -129,6 +150,6 @@ for conj in ['J1', 'J2']:
     lines.append(f'  - 90% percentile: `{s["J_lower"]["p90"]}`')
     lines.append(f'  - 99% percentile: `{s["J_lower"]["p99"]}`')
     lines.append('')
-with open(os.path.join(ROOT, 'results', 'verification_summary.md'), 'w') as f:
+with open(args.summary_markdown, 'w') as f:
     f.write('\n'.join(lines))
 print(json.dumps(summary, indent=2))

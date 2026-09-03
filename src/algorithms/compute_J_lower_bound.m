@@ -1,12 +1,14 @@
 function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1_lower, area_bounds, perimeter_bounds)
-% COMPUTE_J_LOWER_BOUND (Lemma 4.9 / Algorithm 4 — CORRECTED VERTEX):
+% COMPUTE_J_LOWER_BOUND (Lemma 4.9 / Algorithm 4 — COMPARISON POINT):
 % Compute the rigorous per-cell lower bound:
-%   J_k(T^p) >= B_k( p_{i,j} ; lambda1(T^{p_{i+1,j+1}}) )   for all p in the cell,
-% where p_{i,j} = (x_inf, theta_inf) is the cell minimiser of B_k (B~_k is
-% increasing in x and theta, Lemma 4.9). The geometry comes from
+%   J_k(T^p) >= B_k(q_C;lambda1(T^{p_{i+1,j+1}}))
+% for every target p in the cell.  The comparison point q_C is the
+% lower-left parameter corner when it is certified above y=0.04 and is
+% otherwise (x_sup,0.04).  The floor point supplies a lower comparison by
+% monotonicity; it need not belong to the target portion or to Omega and is
+% not asserted to be a minimizer.  The geometry comes from
 % compute_geometry_bounds as RIGOROUS INTERVAL enclosures:
-%   area_bounds(1)      = |T|  at p_{i,j}    = (x_inf, theta_inf)   <- used here
-%   perimeter_bounds(1) = |dT| at p_{i,j}    = (x_inf, theta_inf)
+%   area_bounds(1), perimeter_bounds(1) = certified comparison point
 %   area_bounds(2)      = |T|  at p_{i+1,j+1} (diagnostic only)
 %   perimeter_bounds(2) = |dT| at p_{i+1,j+1} (diagnostic only)
 % B_k is evaluated in interval arithmetic and J_lower = I_inf(B_k) is a
@@ -39,14 +41,14 @@ function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1
     end
 
     % -----------------------------------------
-    % Lemma vertex geometry: p_{i,j} = (x_inf, theta_inf) for the LOWER bound
-    % (rigorous interval enclosures from compute_geometry_bounds)
+    % Certified comparison point for the lower bound (rigorous interval
+    % enclosures from compute_geometry_bounds).
     % -----------------------------------------
     A_L = I_intval(area_bounds(1));
     P_L = I_intval(perimeter_bounds(1));
 
     % -----------------------------------------
-    % Evaluate B_k at the Lemma lower vertex
+    % Evaluate B_k at the certified comparison point
     % -----------------------------------------
     if strcmpi(conjecture_type, 'J1')
         % B1(p;Lambda) = Lambda*A - (pi^2/16)*P^2/A - 7*sqrt(3)*pi^2/12
@@ -61,7 +63,7 @@ function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1
 
         diagnostics = struct();
         diagnostics.conjecture = 'J1';
-        diagnostics.B_eval_point = 'p_{i,j}';
+        diagnostics.B_eval_point = 'certified comparison point';
         diagnostics.lambda_used = lam_low;
         diagnostics.A_used = A_L;
         diagnostics.P_used = P_L;
@@ -87,7 +89,7 @@ function [J_lower, diagnostics] = compute_J_lower_bound(conjecture_type, lambda1
 
         diagnostics = struct();
         diagnostics.conjecture = 'J2';
-        diagnostics.B_eval_point = 'p_{i,j}';
+        diagnostics.B_eval_point = 'certified comparison point';
         diagnostics.lambda_used = lam_low;
         diagnostics.A_used = A_L;
         diagnostics.P_used = P_L;

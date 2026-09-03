@@ -28,6 +28,11 @@ runtime.startintlab_sha256 = local_file_sha256( ...
     startintlab_path);
 runtime.intval_constructor_sha256 = local_file_sha256( ...
     intval_constructor_path);
+if isempty(intlab_root) && ~isempty(startintlab_path)
+    intlab_root = fileparts(startintlab_path);
+end
+[runtime.intlab_tree_sha256,runtime.intlab_tree_file_count, ...
+    runtime.intlab_tree_total_bytes] = local_directory_sha256(intlab_root);
 global gmsh_command
 gmsh = gmsh_command;
 if isempty(gmsh)
@@ -59,6 +64,82 @@ if isfile(resolved_gmsh)
 else
     runtime.gmsh_binary_sha256 = '';
 end
+end
+
+
+function [digest,file_count,total_bytes] = local_directory_sha256(directory)
+% Bind the complete trusted INTLAB installation, not only two entry files.
+digest = '';
+file_count = 0;
+total_bytes = 0;
+if isempty(directory) || ~isfolder(directory)
+    return
+end
+
+entries = dir(fullfile(directory,'**','*'));
+entries = entries(~[entries.isdir]);
+if isempty(entries)
+    return
+end
+full_names = arrayfun(@(entry) fullfile(entry.folder,entry.name), ...
+    entries,'UniformOutput',false);
+root_prefix = [char(directory),filesep];
+relative_names = full_names;
+for k = 1:numel(relative_names)
+    local_name = relative_names{k};
+    if ~startsWith(local_name,root_prefix)
+        error('ver10_runtime_metadata:BadIntlabTreeEntry', ...
+            'INTLAB tree entry is outside the recorded root: %s',local_name);
+    end
+    relative_names{k} = strrep( ...
+        local_name(numel(root_prefix)+1:end),filesep,'/');
+end
+[relative_names,order] = sort(relative_names);
+full_names = full_names(order);
+entries = entries(order);
+
+try
+    engine = javaMethod( ...
+        'getInstance','java.security.MessageDigest','SHA-256');
+catch ME
+    error('ver10_runtime_metadata:NoSHA256', ...
+        'Cannot initialize the SHA-256 engine: %s',ME.message);
+end
+local_digest_update(engine,uint8('ver10-directory-sha256-v1'));
+local_digest_update(engine,uint8(0));
+for k = 1:numel(full_names)
+    path_bytes = unicode2native(relative_names{k},'UTF-8');
+    size_bytes = uint8(sprintf('%d',entries(k).bytes));
+    local_digest_update(engine,path_bytes);
+    local_digest_update(engine,uint8(0));
+    local_digest_update(engine,size_bytes);
+    local_digest_update(engine,uint8(0));
+
+    fid = fopen(full_names{k},'rb');
+    if fid < 0
+        error('ver10_runtime_metadata:CannotHashIntlabFile', ...
+            'Cannot open INTLAB tree file %s.',full_names{k});
+    end
+    cleanup = onCleanup(@() fclose(fid));
+    while true
+        bytes = fread(fid,1024*1024,'*uint8');
+        if isempty(bytes)
+            break
+        end
+        local_digest_update(engine,bytes);
+    end
+    clear cleanup
+    local_digest_update(engine,uint8(0));
+end
+raw = typecast(engine.digest(),'uint8');
+digest = lower(reshape(dec2hex(raw,2).',1,[]));
+file_count = numel(entries);
+total_bytes = sum(double([entries.bytes]));
+end
+
+
+function local_digest_update(engine,bytes)
+engine.update(typecast(uint8(bytes(:)),'int8'));
 end
 
 

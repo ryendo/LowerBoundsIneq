@@ -44,6 +44,13 @@ if ~logical(INTERVAL_MODE)
         'INTLAB interval mode was not enabled.');
 end
 
+% Freeze the complete client runtime before forming any interval endpoint.
+% Every worker is compared with this exact JSON record after initialization
+% and again after its spectral work has completed.
+runtime = ver10_runtime_metadata();
+runtime_payload = jsonencode(runtime);
+runtime_sha256 = local_sha256_bytes(uint8(runtime_payload));
+
 eps_up = I_intval('0.122');
 x_left = I_intval('0.5');
 x_right = x_left+2*eps_up;
@@ -55,20 +62,18 @@ num_anchors = Nx_anchor*Ny_anchor;
 certificates_linear = cell(num_anchors,1);
 
 started = tic;
+worker_runtime_before = local_serial_worker_report( ...
+    runtime_sha256,'spectral-atlas-before-dispatch');
+worker_runtime_after = local_serial_worker_report( ...
+    runtime_sha256,'spectral-atlas-after-dispatch');
 if workers > 0
-    pool = gcp('nocreate');
-    if isempty(pool) || pool.NumWorkers ~= workers
-        if ~isempty(pool), delete(pool); end
-        pool = parpool('local',workers);
-    end
+    pool = ver10_ensure_local_pool(workers);
     future = parfevalOnAll( ...
         pool,@omega_up_all_prepare_worker,0,project_root,'interval');
     wait(future);
-    for f = 1:numel(future)
-        if ~isempty(future(f).Error)
-            rethrow(future(f).Error);
-        end
-    end
+    fetchOutputs(future);
+    worker_runtime_before = ver10_assert_worker_runtime( ...
+        pool,runtime,runtime_sha256,'spectral-atlas-before-dispatch');
     parfor k = 1:num_anchors
         [iy,ix] = ind2sub([Ny_anchor,Nx_anchor],k);
         triangle = I_intval( ...
@@ -77,6 +82,8 @@ if workers > 0
             triangle_spectral_certificate_cr_lg( ...
                 triangle,N_LG,N_rho,bound_order);
     end
+    worker_runtime_after = ver10_assert_worker_runtime( ...
+        pool,runtime,runtime_sha256,'spectral-atlas-after-dispatch');
 else
     for k = 1:num_anchors
         [iy,ix] = ind2sub([Ny_anchor,Nx_anchor],k);
@@ -92,16 +99,17 @@ end
 wall_seconds = toc(started);
 certificate_rigorous = cellfun( ...
     @(c) isfield(c,'rigorous') ...
+        && islogical(c.rigorous) ...
         && isscalar(c.rigorous) ...
-        && (islogical(c.rigorous) || isnumeric(c.rigorous)) ...
-        && isfinite(double(c.rigorous)) ...
-        && double(c.rigorous) == 1, ...
+        && c.rigorous, ...
     certificates_linear);
 if ~all(certificate_rigorous)
     error('run_omega_up_spectral_atlas:UnverifiedCertificate', ...
         'At least one anchor did not return a rigorous certificate.');
 end
 
+ver10_assert_runtime_snapshot( ...
+    runtime,runtime_sha256,'spectral-atlas-client-after-run');
 source_after = ver10_assert_source_unchanged(project_root,source_before);
 atlas = struct();
 atlas.schema = ...
@@ -128,8 +136,16 @@ atlas.bound_order = bound_order;
 atlas.num_certificates = num_anchors;
 atlas.wall_seconds = wall_seconds;
 atlas.source = source_after;
-atlas.runtime = ver10_runtime_metadata();
-atlas.runtime.parallel_workers = workers;
+atlas.runtime = runtime;
+atlas.runtime_sha256 = runtime_sha256;
+atlas.runtime_rechecked_after_run = true;
+atlas.parallel_workers = workers;
+atlas.worker_runtime_validation = struct( ...
+    'policy','full-runtime-json-all-workers-before-and-after-dispatch-v1', ...
+    'before_dispatch',worker_runtime_before, ...
+    'after_dispatch',worker_runtime_after, ...
+    'all_computation_workers_checked',true, ...
+    'runtime_sha256',runtime_sha256);
 
 output_directory = fileparts(output_path);
 if ~isempty(output_directory) && ~exist(output_directory,'dir')
@@ -177,4 +193,32 @@ function local_remove_temporary(path)
 if exist(path,'file')
     delete(path);
 end
+end
+
+
+function report = local_serial_worker_report(runtime_sha256,phase)
+report = struct( ...
+    'schema','lowerboundsineq.worker-runtime-validation.v1', ...
+    'phase',phase, ...
+    'runtime_sha256',runtime_sha256, ...
+    'worker_count',0, ...
+    'all_workers_returned',true, ...
+    'all_workers_full_runtime_json_match',true);
+end
+
+
+function digest = local_sha256_bytes(bytes)
+try
+    engine = javaMethod( ...
+        'getInstance','java.security.MessageDigest','SHA-256');
+catch ME
+    error('run_omega_up_spectral_atlas:NoSHA256', ...
+        'Cannot initialize SHA-256: %s',ME.message);
+end
+bytes = uint8(bytes(:));
+if ~isempty(bytes)
+    engine.update(typecast(bytes,'int8'));
+end
+raw = typecast(engine.digest(),'uint8');
+digest = lower(reshape(dec2hex(raw,2).',1,[]));
 end

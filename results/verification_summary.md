@@ -1,12 +1,13 @@
 # Verification Summary
 
 ## Overall
-- **Project fully verified:** YES
+- **Project fully verified:** NO
 - Cell definition: `inputs/cell_def.csv`
 
 ## J1 (Laugesen–Siudeja type)
 - Total cells: **188,623**
-- Verified:    **188,623**  (100.000%)
+- Verified:    **188,621**  (99.999%)
+- Exact input cell-id coverage: **YES**
 - `J_lower` statistics (full-precision values from the source CSV):
   - **min**:    `2.59851427490000013e-07`
   - **median**: `1.11128998239999992e-02`
@@ -18,7 +19,8 @@
 
 ## J2 (Cheeger type)
 - Total cells: **188,623**
-- Verified:    **188,623**  (100.000%)
+- Verified:    **188,621**  (99.999%)
+- Exact input cell-id coverage: **YES**
 - `J_lower` statistics (full-precision values from the source CSV):
   - **min**:    `9.56659800759999978e-05`
   - **median**: `1.17951505089999992e-02`

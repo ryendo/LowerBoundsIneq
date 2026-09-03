@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#PBS -S /bin/bash
+#PBS -N thin-ray-smoke
+#PBS -q normal
+#PBS -l nodes=1:ppn=1
+#PBS -l mem=4gb
+#PBS -l walltime=00:30:00
+#PBS -o thin_rayleigh_smoke.stdout
+#PBS -e thin_rayleigh_smoke.stderr
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+SOURCE_DIR="${THIN_SOURCE_DIR:-$PBS_O_WORKDIR/source}"
+export INTLAB_ROOT="${INTLAB_ROOT:-/home/rendo/tmp/Intlab_V12_nqc_01}"
+export RUN_INTLAB_SMOKE=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+
+test -d "$SOURCE_DIR/.git"
+test -f "$INTLAB_ROOT/startintlab.m"
+cd "$SOURCE_DIR"
+matlab -batch "run('tests/test_muhat1_rayleigh_certificate.m')"

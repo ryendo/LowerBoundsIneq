@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+#PBS -S /bin/bash
+#PBS -N phanuel-probe
+#PBS -q normal
+#PBS -l nodes=1:ppn=2
+#PBS -l mem=32gb
+#PBS -l walltime=00:30:00
+#PBS -o /dev/shm/rendo-phanuel-20260903-104720-complete-proof/state/probe.stdout
+#PBS -e /dev/shm/rendo-phanuel-20260903-104720-complete-proof/state/probe.stderr
+
+# A bounded, production-parameter Omega_mid sample.  This is a resource
+# measurement and regression gate, never a complete proof certificate.
+
+set -euo pipefail
+umask 077
+export LC_ALL=C
+cd "$PBS_O_WORKDIR"
+
+SCRATCH_ROOT="/dev/shm/rendo-phanuel-20260903-104720-complete-proof"
+STATE_DIR="$SCRATCH_ROOT/state"
+SOURCE_DIR="$SCRATCH_ROOT/source"
+export INTLAB_ROOT="/home/rendo/tmp/Intlab_V12_nqc_01"
+export GMSH_COMMAND="/usr/bin/gmsh"
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export VER10_PARALLEL_JOB_STORAGE="$SCRATCH_ROOT/matlab-job-storage-probe-${PBS_JOBID}"
+export MATLAB_PREFDIR="$STATE_DIR/matlab-prefs-probe-${PBS_JOBID}"
+export TMPDIR="$SCRATCH_ROOT/tmp-probe-${PBS_JOBID}"
+export VER10_PROBE_OUTPUT="$SCRATCH_ROOT/resource-probe-output-${PBS_JOBID}"
+
+test -n "${PBS_JOBID:-}"
+test -n "${PBS_NODEFILE:-}"
+test -r "$PBS_NODEFILE"
+test -d "$SCRATCH_ROOT"
+test "$(stat -c '%u' "$SCRATCH_ROOT")" = "$(id -u)"
+test "$(stat -c '%a' "$SCRATCH_ROOT")" = 700
+test "$(stat -f -c '%T' "$SCRATCH_ROOT")" = tmpfs
+test "$(readlink -f "$PBS_O_WORKDIR")" = "$STATE_DIR"
+test -d "$SOURCE_DIR/.git"
+test -f "$INTLAB_ROOT/startintlab.m"
+test -x "$GMSH_COMMAND"
+test ! -e "$VER10_PROBE_OUTPUT"
+mkdir -p "$STATE_DIR" "$MATLAB_PREFDIR" "$TMPDIR" \
+  "$VER10_PARALLEL_JOB_STORAGE"
+
+ALLOCATED_SLOTS="$(wc -l < "$PBS_NODEFILE")"
+ALLOCATED_NODES="$(sort -u "$PBS_NODEFILE" | wc -l)"
+if (( ALLOCATED_SLOTS < 2 || ALLOCATED_NODES != 1 )); then
+  printf 'Expected one node and at least two slots; got nodes=%s slots=%s.\n' \
+    "$ALLOCATED_NODES" "$ALLOCATED_SLOTS" >&2
+  exit 75
+fi
+
+exec 9> "$STATE_DIR/complete-proof.lock"
+if ! /usr/bin/flock -n 9; then
+  printf 'Another complete-proof wrapper is using %s.\n' "$SCRATCH_ROOT" >&2
+  exit 75
+fi
+
+cd "$SOURCE_DIR"
+SOURCE_STATUS_BEFORE="$(git status --porcelain=v1 --untracked-files=all)"
+test -z "$SOURCE_STATUS_BEFORE"
+CURRENT_SOURCE_COMMIT="$(git rev-parse --verify HEAD)"
+PINNED_SOURCE_COMMIT_FILE="$STATE_DIR/staged-source-commit.txt"
+if test -e "$PINNED_SOURCE_COMMIT_FILE"; then
+  test -f "$PINNED_SOURCE_COMMIT_FILE"
+  test ! -L "$PINNED_SOURCE_COMMIT_FILE"
+  test "$(wc -l < "$PINNED_SOURCE_COMMIT_FILE")" = 1
+  test "$(sed -n '1p' "$PINNED_SOURCE_COMMIT_FILE")" \
+    = "$CURRENT_SOURCE_COMMIT"
+else
+  PINNED_SOURCE_COMMIT_STAGE="$(mktemp "$STATE_DIR/.source-commit.XXXXXX")"
+  printf '%s\n' "$CURRENT_SOURCE_COMMIT" > "$PINNED_SOURCE_COMMIT_STAGE"
+  mv "$PINNED_SOURCE_COMMIT_STAGE" "$PINNED_SOURCE_COMMIT_FILE"
+fi
+printf '%s\n' "$CURRENT_SOURCE_COMMIT" > "$STATE_DIR/probe-source-commit.txt"
+PROBE_STARTED_STAGE="$(mktemp "$STATE_DIR/.probe-started.XXXXXX")"
+{
+  printf 'source_commit=%s\n' "$CURRENT_SOURCE_COMMIT"
+  printf 'pbs_job_id=%s\n' "$PBS_JOBID"
+  printf 'started_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$PROBE_STARTED_STAGE"
+mv "$PROBE_STARTED_STAGE" "$STATE_DIR/probe-started.txt"
+
+MEM_AVAILABLE_BEFORE_KIB="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+SHM_AVAILABLE_BEFORE_KIB="$(df --output=avail -k "$SCRATCH_ROOT" | tail -n 1)"
+if (( MEM_AVAILABLE_BEFORE_KIB < 16777216 \
+      || SHM_AVAILABLE_BEFORE_KIB < 2097152 )); then
+  printf 'Insufficient headroom even for the bounded probe: memory=%s KiB shm=%s KiB.\n' \
+    "$MEM_AVAILABLE_BEFORE_KIB" "$SHM_AVAILABLE_BEFORE_KIB" >&2
+  exit 75
+fi
+PROBE_TIME="$STATE_DIR/probe-${PBS_JOBID}.time"
+PROBE_LOG="$STATE_DIR/probe-${PBS_JOBID}.log"
+PROBE_RESOURCE_LOG="$STATE_DIR/probe-resources-${PBS_JOBID}.log"
+
+job_rss_sample() {
+  local environment status rss
+  local process_count=0
+  local total_rss_kib=0
+  for environment in /proc/[0-9]*/environ; do
+    if /usr/bin/grep -Fzqx "PBS_JOBID=$PBS_JOBID" "$environment" \
+        2>/dev/null; then
+      status="${environment%/environ}/status"
+      rss="$(awk '/^VmRSS:/ {print $2}' "$status" 2>/dev/null || true)"
+      if [[ "$rss" =~ ^[0-9]+$ ]]; then
+        total_rss_kib=$((total_rss_kib+rss))
+        process_count=$((process_count+1))
+      fi
+    fi
+  done
+  printf '%s job_processes=%s job_rss_kib=%s mem_available_kib=%s shm_available_kib=%s\n' \
+    "$(date -Is)" "$process_count" "$total_rss_kib" \
+    "$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)" \
+    "$(df --output=avail -k "$SCRATCH_ROOT" | tail -n 1)"
+}
+
+monitor_probe_resources() {
+  while true; do
+    job_rss_sample
+    sleep 2
+  done
+}
+monitor_probe_resources > "$PROBE_RESOURCE_LOG" 2>&1 &
+PROBE_MONITOR_PID="$!"
+trap 'kill "$PROBE_MONITOR_PID" 2>/dev/null || true' EXIT
+
+# The four cells exercise direct CR, terminal LG, and the adaptive
+# subdivision path, including the two historically nonfinite rows.
+/usr/bin/time -v -o "$PROBE_TIME" \
+  /usr/bin/timeout --signal=TERM --kill-after=30s 25m \
+  /usr/local/bin/matlab -batch \
+  "addpath('scripts_run'); m=run_omega_mid_unified_parallel('mode','interval','workers',2,'input_file',fullfile(pwd,'inputs','cell_def.csv'),'output_dir',getenv('VER10_PROBE_OUTPUT'),'run_name','omega_mid_representative','chunk_size',2,'checkpoint_every',1,'max_subdivision_depth',8,'max_fem_refinement_level',2,'minimum_cr_mesh_size',0.005,'minimum_lg_mesh_size',0.025,'cell_ids',[1,11731,138748,152387],'resume',false,'retry_failed',true); assert(m.summary.rigorous); assert(m.summary.exact_selected_id_coverage); assert(m.summary.num_selected_cells==4); assert(m.summary.num_strict_records==4); assert(m.summary.num_errors==0); assert(strcmp(m.selection.mode,'explicit-cell-ids')); assert(isequal(double(m.selection.target_cell_ids),[1,11731,138748,152387])); assert(m.execution.workers_requested==2); assert(m.execution.chunk_size==2); assert(m.execution.checkpoint_every_cells==1); assert(m.execution.max_subdivision_depth==8); assert(m.execution.max_fem_refinement_level==2); assert(m.execution.minimum_cr_mesh_size==0.005); assert(m.execution.minimum_lg_mesh_size==0.025); assert(m.runtime_rechecked_after_run); assert(m.worker_runtime_validation.all_computation_workers_checked);" \
+  > "$PROBE_LOG" 2>&1
+
+kill "$PROBE_MONITOR_PID" 2>/dev/null || true
+wait "$PROBE_MONITOR_PID" 2>/dev/null || true
+trap - EXIT
+
+SOURCE_STATUS_AFTER="$(git status --porcelain=v1 --untracked-files=all)"
+test -z "$SOURCE_STATUS_AFTER"
+CHECKPOINT_DIR="$VER10_PROBE_OUTPUT/omega_mid_representative/checkpoints"
+test -d "$CHECKPOINT_DIR"
+CHECKPOINT_COUNT="$(find "$CHECKPOINT_DIR" -mindepth 1 -maxdepth 1 \
+  -type f -name 'chunk_*.mat' | wc -l)"
+test "$CHECKPOINT_COUNT" = 2
+CHECKPOINT_TOTAL_BYTES="$(find "$CHECKPOINT_DIR" -mindepth 1 -maxdepth 1 \
+  -type f -name 'chunk_*.mat' -printf '%s\n' \
+  | awk '{sum += $1} END {printf "%.0f",sum}')"
+CHECKPOINT_MAX_BYTES="$(find "$CHECKPOINT_DIR" -mindepth 1 -maxdepth 1 \
+  -type f -name 'chunk_*.mat' -printf '%s\n' \
+  | sort -n | tail -n 1)"
+PROBE_OUTPUT_BYTES="$(du -sb "$VER10_PROBE_OUTPUT" | awk '{print $1}')"
+PROBE_OUTPUT_FILES="$(find "$VER10_PROBE_OUTPUT" -type f | wc -l)"
+MAX_RSS_KIB="$(awk -F: \
+  '/Maximum resident set size/ {gsub(/[[:space:]]/,"",$2); print $2}' \
+  "$PROBE_TIME")"
+test -n "$MAX_RSS_KIB"
+PEAK_AGGREGATE_RSS_KIB="$(awk '
+  {
+    for (k=1; k<=NF; k++) {
+      if ($k ~ /^job_rss_kib=/) {
+        split($k,p,"=");
+        if (p[2]+0 > peak) peak=p[2]+0;
+      }
+    }
+  }
+  END {printf "%.0f",peak}
+' "$PROBE_RESOURCE_LOG")"
+test -n "$PEAK_AGGREGATE_RSS_KIB"
+test "$PEAK_AGGREGATE_RSS_KIB" -gt 0
+MEM_AVAILABLE_AFTER_KIB="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+SHM_AVAILABLE_AFTER_KIB="$(df --output=avail -k "$SCRATCH_ROOT" | tail -n 1)"
+
+PROBE_SUMMARY_STAGE="$(mktemp "$STATE_DIR/.probe-summary.XXXXXX")"
+{
+  printf 'source_commit=%s\n' "$CURRENT_SOURCE_COMMIT"
+  printf 'pbs_job_id=%s\n' "$PBS_JOBID"
+  printf 'allocated_nodes=%s\n' "$ALLOCATED_NODES"
+  printf 'allocated_slots=%s\n' "$ALLOCATED_SLOTS"
+  printf 'selected_cells=1,11731,138748,152387\n'
+  printf 'mode=interval\n'
+  printf 'workers=2\n'
+  printf 'chunk_size=2\n'
+  printf 'checkpoint_every=1\n'
+  printf 'max_subdivision_depth=8\n'
+  printf 'max_fem_refinement_level=2\n'
+  printf 'minimum_cr_mesh_size=0.005\n'
+  printf 'minimum_lg_mesh_size=0.025\n'
+  printf 'maximum_resident_set_kib=%s\n' "$MAX_RSS_KIB"
+  printf 'peak_aggregate_job_rss_kib=%s\n' "$PEAK_AGGREGATE_RSS_KIB"
+  printf 'checkpoint_count=%s\n' "$CHECKPOINT_COUNT"
+  printf 'checkpoint_total_bytes=%s\n' "$CHECKPOINT_TOTAL_BYTES"
+  printf 'checkpoint_max_bytes=%s\n' "$CHECKPOINT_MAX_BYTES"
+  printf 'probe_output_files=%s\n' "$PROBE_OUTPUT_FILES"
+  printf 'probe_output_bytes=%s\n' "$PROBE_OUTPUT_BYTES"
+  printf 'mem_available_before_kib=%s\n' "$MEM_AVAILABLE_BEFORE_KIB"
+  printf 'mem_available_after_kib=%s\n' "$MEM_AVAILABLE_AFTER_KIB"
+  printf 'shm_available_before_kib=%s\n' "$SHM_AVAILABLE_BEFORE_KIB"
+  printf 'shm_available_after_kib=%s\n' "$SHM_AVAILABLE_AFTER_KIB"
+} > "$PROBE_SUMMARY_STAGE"
+PROBE_SUMMARY="$STATE_DIR/probe-summary.txt"
+PROBE_SUMMARY_SHA="$STATE_DIR/probe-summary.sha256"
+mv "$PROBE_SUMMARY_STAGE" "$PROBE_SUMMARY"
+cp "$PROBE_SUMMARY" "$STATE_DIR/probe-summary-${PBS_JOBID}.txt"
+PROBE_SUMMARY_SHA_STAGE="$(mktemp "$STATE_DIR/.probe-summary-sha.XXXXXX")"
+(
+  cd "$STATE_DIR"
+  sha256sum "$(basename "$PROBE_SUMMARY")"
+) > "$PROBE_SUMMARY_SHA_STAGE"
+mv "$PROBE_SUMMARY_SHA_STAGE" "$PROBE_SUMMARY_SHA"
+(cd "$STATE_DIR" && sha256sum -c "$(basename "$PROBE_SUMMARY_SHA")")
+
+# This fixed marker is written last.  A later failed probe changes
+# probe-started.txt and therefore invalidates the older completion marker.
+PROBE_COMPLETE="$STATE_DIR/probe-complete.sha256"
+PROBE_COMPLETE_STAGE="$(mktemp "$STATE_DIR/.probe-complete.XXXXXX")"
+(
+  cd "$SCRATCH_ROOT"
+  {
+    printf '%s\0' \
+      state/probe-started.txt \
+      state/probe-summary.txt \
+      state/probe-summary.sha256 \
+      "state/probe-${PBS_JOBID}.time" \
+      "state/probe-${PBS_JOBID}.log" \
+      "state/probe-resources-${PBS_JOBID}.log"
+    find "resource-probe-output-${PBS_JOBID}" -type f -print0 | sort -z
+  } | xargs -0 sha256sum
+) > "$PROBE_COMPLETE_STAGE"
+test -s "$PROBE_COMPLETE_STAGE"
+mv "$PROBE_COMPLETE_STAGE" "$PROBE_COMPLETE"
+(cd "$SCRATCH_ROOT" && sha256sum -c "state/$(basename "$PROBE_COMPLETE")")
+printf '%s\n' "representative resource probe completed"

@@ -1,0 +1,29 @@
+%RUN_UPPER_RAYLEIGH_GLOBAL_FINALIZE  Finalize the three-part upper proof.
+
+project_root = fileparts(fileparts(mfilename('fullpath')));
+addpath(fullfile(project_root,'scripts_run'));
+addpath(fullfile(project_root,'src','degenerate'));
+thin_manifest = getenv('VER10_THIN_MANIFEST');
+compact_manifest = getenv('VER10_COMPACT_UPPER_MANIFEST');
+residual_manifest = getenv('VER10_OMEGA_UP_MANIFEST');
+spectral_atlas = getenv('VER10_SPECTRAL_ATLAS');
+certificate_root = getenv('VER10_CERTIFICATE_ROOT');
+if isempty(thin_manifest) || isempty(compact_manifest) ...
+        || isempty(residual_manifest) || isempty(spectral_atlas) ...
+        || isempty(certificate_root)
+    error('run_upper_rayleigh_global_finalize:MissingEnvironment', ...
+        ['Set VER10_THIN_MANIFEST, VER10_COMPACT_UPPER_MANIFEST, ', ...
+         'VER10_OMEGA_UP_MANIFEST, VER10_SPECTRAL_ATLAS, and ', ...
+         'VER10_CERTIFICATE_ROOT.']);
+end
+omega_up_all_prepare_worker(project_root,'interval');
+output_path = fullfile( ...
+    certificate_root,'siudeja_upper_global_rayleigh_manifest.json');
+manifest = verify_upper_rayleigh_global_manifests( ...
+    thin_manifest,compact_manifest,residual_manifest, ...
+    spectral_atlas,output_path);
+if ~manifest.complete_certificate
+    error('run_upper_rayleigh_global_finalize:Incomplete', ...
+        'The global Rayleigh/affine/residual certificate is incomplete.');
+end
+fprintf('global Rayleigh upper certificate: %s\n',output_path);

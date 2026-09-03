@@ -1,0 +1,49 @@
+{
+  "schema": "lowerboundsineq.omega_mid_geometric_coverage.v1",
+  "algorithm": "exact-decimal-arrangement-intlab-boundary-extrema-v1",
+  "status": "certified",
+  "complete": true,
+  "rigorous": true,
+  "input": {
+    "sha256": "b370ecb63a68910ea388e8a45de84f6ed4b545a4cef6a221935f1ada47429be3",
+    "cell_count": 188623,
+    "endpoint_import": "CSV text",
+    "interval_conversion": "decimal text directly to INTLAB"
+  },
+  "region": {
+    "omega": "x>=1/2, y>0, x^2+y^2<=1",
+    "y_floor_decimal": "0.04",
+    "ball_center_x_decimal": "0.5",
+    "ball_center_y": "sqrt(3)/2",
+    "ball_radius_decimal": "0.122",
+    "certified_distance_relation": "distance >= 0.122",
+    "requested_strict_complement_also_covered": true,
+    "coordinate_map": "theta=atan(y/x)"
+  },
+  "proof": {
+    "decimal_topology_exact": true,
+    "binary_double_endpoint_roundtrip": false,
+    "arbitrary_tolerance_used": false,
+    "closed_rectangles": true,
+    "elementary_grid_union_checked": true,
+    "lower_boundary_monotonicity": "atan(0.04/x) decreasing",
+    "upper_boundary_extrema": "slab endpoints plus the enclosed circle-branch critical point, circle/unit-circle switch, and circle right endpoint",
+    "interval_comparison_rule": "cell lower endpoint upper bound <= required lower floor; cell upper endpoint lower bound >= required upper ceiling"
+  },
+  "statistics": {
+    "unique_x_coordinates": 1637,
+    "unique_theta_coordinates": 723,
+    "elementary_x_slabs": 1636,
+    "target_x_slabs_checked": 1636,
+    "maximum_covered_theta_components_per_slab": 1,
+    "upper_boundary_candidate_evaluations": 3275,
+    "minimum_certified_lower_margin": 3.1221220828478446E-5,
+    "minimum_certified_upper_margin": 1.7404129026843407E-8
+  },
+  "witness": [],
+  "hashes": {
+    "algorithm": "SHA-256",
+    "input_csv": "b370ecb63a68910ea388e8a45de84f6ed4b545a4cef6a221935f1ada47429be3",
+    "proof_payload": "04f6c0d72064b510ed6a9765dfcecad9c1314afeb3fe76410860d8d9ef1275a4"
+  }
+}

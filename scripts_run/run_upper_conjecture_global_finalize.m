@@ -1,5 +1,8 @@
 %RUN_UPPER_CONJECTURE_GLOBAL_FINALIZE  Join compact and residual manifests.
 
+project_root = fileparts(fileparts(mfilename('fullpath')));
+addpath(fullfile(project_root,'scripts_run'));
+omega_up_all_prepare_worker(project_root,'interval');
 compact_manifest = getenv('VER10_COMPACT_UPPER_MANIFEST');
 residual_manifest = getenv('VER10_OMEGA_UP_MANIFEST');
 certificate_root = getenv('VER10_CERTIFICATE_ROOT');

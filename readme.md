@@ -148,6 +148,56 @@ validator deliberately rejects them.  Final counts and extrema will be
 quoted here only after the unified clean-commit interval run has atomically
 replaced both CSVs and regenerated `results/verification_summary.json`.
 
+The production completion gate also requires an independent geometric
+certificate from `tools/validate_omega_mid_coverage.m`.  It imports the four
+CSV endpoints as text, constructs INTLAB intervals directly from those
+decimal strings, and checks the exact-decimal elementary arrangement without
+a tolerance.  The target is the part of
+\(\{x\geq1/2,\ x^2+y^2\leq1,\ y\geq0.04\}\) outside the closed radius-0.122
+ball about \((1/2,\sqrt3/2)\).  Each unified run writes
+`omega_mid_geometric_coverage_manifest.json`; its SHA-256 and proof-payload
+hash are embedded in the unified manifest.  Exact cell-ID coverage is not,
+by itself, accepted as a regional proof.
+
+The resumable checkpoint fingerprint also fixes the complete runtime
+metadata captured before the proof, including the INTLAB installation-tree
+digest and the resolved Gmsh binary digest.  Resume is refused if that
+runtime, the saved config, or its fingerprint payload differs; the runtime
+is measured again before final artifacts are assembled.
+
+A completed run also creates an immutable directory under
+`results/omega_mid_publications/`.  Its publication manifest fixes the
+SHA-256 of deterministic `J1_OmegaMid.csv.gz`/`J2_OmegaMid.csv.gz` files
+and their expanded CSV contents, the geometric and unified manifests, the
+uniquely named `omega_mid_unified_results_<generation-id>.mat`, and
+`config.mat`.  The results MAT is the
+replay artifact containing every `records(:).leaves(:).attempts` history;
+the sibling publication manifest, rather than the old run-directory paths
+inside the copied unified manifest, is authoritative for resolving these
+files.  The replay results MAT can be large and is therefore ignored by
+Git, while the small `config.mat` remains trackable; after a production run
+the uniquely named results MAT must be uploaded as a GitHub Release asset
+without renaming, with the tracked publication manifest and its hashes
+retained for verification.
+The pinned complete-proof production wrapper sets
+`VER10_RELEASE_REPOSITORY=ryendo/LowerBoundsIneq` and
+`VER10_RELEASE_TAG=complete-proof-20260903`.  Run its clean-checkout smoke
+and bounded two-worker resource probe before the 20-worker production job;
+the exact PBS order, tmpfs gates, commit pin, and recovery procedure are in
+[`hpc/README.md`](hpc/README.md).  The generation manifest
+records the resulting GitHub owner, repository, tag, unique asset name,
+download URL, and expected SHA-256.  Asset availability is intentionally
+not required while staging; after upload, download the Release asset and
+check it against that recorded digest.
+Every generation payload and both expanded gzip contents are rehashed from
+the publication manifest immediately before and after the staging-directory
+rename.  Interrupted committed-publication recovery repeats the same full
+bundle validation rather than trusting only the manifest file itself.
+Rollback removes a staged generation only after the same validation and
+only when its directory contains exactly the manifest, its eight listed
+payloads, and (while staging) the hash-bound current-generation pointer;
+unexpected user files or subdirectories make cleanup fail closed.
+
 ### Ver10 \(\Omega_{\rm up}\) residual production run
 
 `scripts_run/run_omega_up_all_residual_parallel.m` is the resumable

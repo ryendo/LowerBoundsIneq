@@ -1,8 +1,11 @@
 {
   "J1": {
     "total_cells": 188623,
-    "verified_cells": 188623,
-    "verified_rate": 1.0,
+    "verified_cells": 188621,
+    "verified_rate": 0.9999893968391977,
+    "exact_input_id_coverage": true,
+    "invalid_or_unverified_cells": 2,
+    "nonfinite_J_lower_cells": 2,
     "J_lower": {
       "min": "2.59851427490000013e-07",
       "max": "1.34388526850000005e+02",
@@ -15,8 +18,11 @@
   },
   "J2": {
     "total_cells": 188623,
-    "verified_cells": 188623,
-    "verified_rate": 1.0,
+    "verified_cells": 188621,
+    "verified_rate": 0.9999893968391977,
+    "exact_input_id_coverage": true,
+    "invalid_or_unverified_cells": 2,
+    "nonfinite_J_lower_cells": 2,
     "J_lower": {
       "min": "9.56659800759999978e-05",
       "max": "1.59276491880000009e+02",
@@ -28,7 +34,8 @@
     }
   },
   "overall": {
-    "all_verified": true,
-    "cell_def_file": "inputs/cell_def.csv"
+    "all_verified": false,
+    "cell_def_file": "inputs/cell_def.csv",
+    "expected_cell_count": 188623
   }
 }

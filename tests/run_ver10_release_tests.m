@@ -18,10 +18,17 @@ test_bernstein_strong_residual_estimator(true);
 test_omega_up_spectral_atlas;
 test_omega_up_all_functionals_unified;
 test_omega_up_checkpoint_validation;
+test_omega_mid_geometric_coverage;
+test_omega_mid_artifact_binding;
+test_omega_mid_floor_geometry;
 test_omega_mid_unified_driver;
 test_apply_exact_boundary_point_setting;
 test_upper_conjecture_smoke;
+test_muhat1_rayleigh_certificate;
 test_upper_compact_cover;
 test_upper_global_manifest_combiner;
+% This test deliberately replaces and deletes the current parallel pool,
+% so keep it last in the consolidated suite.
+test_worker_runtime_binding;
 
 fprintf('run_ver10_release_tests: ALL PASS\n');

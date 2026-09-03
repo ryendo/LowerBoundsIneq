@@ -30,6 +30,13 @@ else
     pi_value = pi;
 end
 t_double = str2double(opt.t_text);
+s_lo_double = str2double(opt.s_lo_text);
+s_hi_double = str2double(opt.s_hi_text);
+
+if is_interval
+    s_domain_lo = intval(opt.s_lo_text);
+    s_domain_hi = intval(opt.s_hi_text);
+end
 
 basis = local_basis(opt.degree);
 M_double = local_constant_matrix(basis.basis, basis.basis, -1, 1, false);
@@ -41,50 +48,110 @@ max_midpoint = -inf;
 max_cell = 0;
 max_down_scaled_upper = -inf;
 max_down_cell = 0;
+coefficients = zeros(opt.s_cells,opt.degree);
+polynomial_width = size(basis.legendre,2);
+polynomial_lower = zeros(opt.s_cells,polynomial_width);
+polynomial_upper = zeros(opt.s_cells,polynomial_width);
+if is_interval && ~isempty(opt.down_y_max_text)
+    down_scaled_lower_grid = zeros(opt.s_cells,opt.down_y_cells);
+    down_scaled_upper_grid = zeros(opt.s_cells,opt.down_y_cells);
+    r_eval_lo = zeros(1,opt.down_y_cells);
+    r_eval_hi = zeros(1,opt.down_y_cells);
+else
+    down_scaled_lower_grid = zeros(opt.s_cells,0);
+    down_scaled_upper_grid = zeros(opt.s_cells,0);
+    r_eval_lo = zeros(1,0);
+    r_eval_hi = zeros(1,0);
+end
 
 for cell_id = 1:opt.s_cells
-    ds = (opt.s_hi-opt.s_lo)/opt.s_cells;
-    s_lo = opt.s_lo+(cell_id-1)*ds;
-    s_hi = opt.s_lo+cell_id*ds;
+    ds = (s_hi_double-s_lo_double)/opt.s_cells;
+    s_lo = s_lo_double+(cell_id-1)*ds;
+    s_hi = s_lo_double+cell_id*ds;
     s_mid = (s_lo+s_hi)/2;
 
     K_mid = local_stiffness( ...
         t_double, s_mid, basis, M_double, D_double, pi, false);
-    [vectors, values] = eig(K_mid, M_double, 'vector');
-    [mu_mid, order] = sort(real(values), 'ascend');
-    q = real(vectors(:, order(1)));
-    q = q/sqrt(q.'*M_double*q);
-    if local_polyval(q.'*basis.legendre, 0) < 0
-        q = -q;
+    if isempty(opt.frozen_coefficients)
+        [vectors, values] = eig(K_mid, M_double, 'vector');
+        [~, order] = sort(real(values), 'ascend');
+        q = real(vectors(:, order(1)));
+        q = q/sqrt(q.'*M_double*q);
+        if local_polyval(q.'*basis.legendre, 0) < 0
+            q = -q;
+        end
+    else
+        % Replay the exact binary64 coefficients recorded by the
+        % certificate.  In particular, do not renormalize them here.
+        q = opt.frozen_coefficients(cell_id,:).';
     end
+    coefficients(cell_id,:) = q.';
+    midpoint_ritz = real((q.'*K_mid*q)/(q.'*M_double*q));
 
     if is_interval
-        s_cell = infsup(s_lo, s_hi);
-        rayleigh = local_scalar_rayleigh( ...
-            t, s_cell, q, basis, pi_value, true);
+        % Form the uniform partition from decimal endpoint intervals and
+        % exact integer ratios.  A singleton interval made from s_lo or
+        % s_hi above would certify only the rounded binary64 endpoint.
+        fraction_lo = intval(cell_id-1)/intval(opt.s_cells);
+        fraction_hi = intval(cell_id)/intval(opt.s_cells);
+        s_cell = infsup( ...
+            inf(s_domain_lo+(s_domain_hi-s_domain_lo)*fraction_lo), ...
+            sup(s_domain_lo+(s_domain_hi-s_domain_lo)*fraction_hi));
+        if isempty(opt.frozen_polynomial_lower)
+            p_interval = intval(q.')*intval(basis.legendre);
+        else
+            p_interval = infsup( ...
+                opt.frozen_polynomial_lower(cell_id,:), ...
+                opt.frozen_polynomial_upper(cell_id,:));
+        end
+        polynomial_lower(cell_id,:) = inf(p_interval);
+        polynomial_upper(cell_id,:) = sup(p_interval);
+        [rayleigh,mass] = local_scalar_rayleigh( ...
+            t,s_cell,q,basis,pi_value,true,p_interval);
         rayleigh_lower = inf(rayleigh);
         rayleigh_upper = sup(rayleigh);
-        if ~isfinite(rayleigh_lower) || ~isfinite(rayleigh_upper)
+        if ~isfinite(rayleigh_lower) || ~isfinite(rayleigh_upper) ...
+                || ~isfinite(inf(mass)) || ~isfinite(sup(mass)) ...
+                || inf(mass) <= 0
             error('Nonfinite Rayleigh enclosure on s-cell %d: [%g,%g].', ...
                 cell_id, s_lo, s_hi);
         end
     else
-        rayleigh_lower = mu_mid(1);
-        rayleigh_upper = mu_mid(1);
+        mass = q.'*M_double*q;
+        rayleigh_lower = midpoint_ritz;
+        rayleigh_upper = midpoint_ritz;
     end
 
     cells(cell_id).id = cell_id;
     cells(cell_id).s_lo = s_lo;
     cells(cell_id).s_hi = s_hi;
     cells(cell_id).s_mid = s_mid;
-    cells(cell_id).midpoint_ritz = mu_mid(1);
+    if is_interval
+        cells(cell_id).s_eval_lo = inf(s_cell);
+        cells(cell_id).s_eval_hi = sup(s_cell);
+        cells(cell_id).mass_lower = inf(mass);
+        cells(cell_id).mass_upper = sup(mass);
+    else
+        cells(cell_id).s_eval_lo = s_lo;
+        cells(cell_id).s_eval_hi = s_hi;
+        cells(cell_id).mass_lower = mass;
+        cells(cell_id).mass_upper = mass;
+    end
+    cells(cell_id).midpoint_ritz = midpoint_ritz;
     cells(cell_id).rayleigh_lower = rayleigh_lower;
     cells(cell_id).rayleigh_upper = rayleigh_upper;
     cells(cell_id).target_11_5_verified = is_interval && rayleigh_upper <= 11.5;
-    if is_interval && ~isempty(opt.down_y_max)
-        cells(cell_id).down_scaled_upper = local_down_scaled_upper( ...
-            s_cell, rayleigh_upper, opt.down_y_max, ...
-            opt.down_y_cells, pi_value);
+    if is_interval && ~isempty(opt.down_y_max_text)
+        [cells(cell_id).down_scaled_upper,down_lo,down_hi,r_lo,r_hi] = ...
+            local_down_scaled_upper( ...
+                s_cell,rayleigh_upper,opt.down_y_max_text, ...
+                opt.down_y_cells,pi_value);
+        down_scaled_lower_grid(cell_id,:) = down_lo;
+        down_scaled_upper_grid(cell_id,:) = down_hi;
+        if cell_id == 1
+            r_eval_lo = r_lo;
+            r_eval_hi = r_hi;
+        end
         if cells(cell_id).down_scaled_upper > max_down_scaled_upper
             max_down_scaled_upper = cells(cell_id).down_scaled_upper;
             max_down_cell = cell_id;
@@ -99,13 +166,13 @@ for cell_id = 1:opt.s_cells
         max_upper = rayleigh_upper;
         max_cell = cell_id;
     end
-    max_midpoint = max(max_midpoint, mu_mid(1));
+    max_midpoint = max(max_midpoint, midpoint_ritz);
 end
 
-function rayleigh = local_scalar_rayleigh( ...
-        t, s, q, basis, pi_value, is_interval)
+function [rayleigh,mass] = local_scalar_rayleigh( ...
+        t,s,q,basis,pi_value,is_interval,p_interval)
 if is_interval
-    p = intval(q.')*intval(basis.legendre);
+    p = p_interval;
     phi = local_conv(p, intval([1 0 -1]));
     dphi = local_derivative(phi);
     p_squared = local_conv(p, p);
@@ -142,7 +209,11 @@ if is_interval
     weighted_polynomial(1) = weighted_polynomial(1)-mass;
     slope_polynomial = local_poly_add( ...
         left_polynomial, right_polynomial);
-    a = t^(2/3);
+    % The exponent is the exact rational 2/3 enclosed by INTLAB.  Writing
+    % 2/3 directly here first rounds it to a binary64 number and does not
+    % prove a statement about the mathematical exponent 2/3.
+    two_thirds = intval('2')/intval('3');
+    a = t^two_thirds;
     c = 3+4*pi_value^2;
     numerator_polynomial = ...
         (pi_value^2/a)*weighted_polynomial ...
@@ -175,16 +246,19 @@ result.mode = opt.mode;
 result.rigor = local_if(is_interval, ...
     'certified_interval_rayleigh_upper', 'exploratory_double');
 result.t = str2double(opt.t_text);
+result.t_text = opt.t_text;
 result.degree = opt.degree;
 result.s_cells = opt.s_cells;
-result.s_domain = [opt.s_lo, opt.s_hi];
+result.s_domain = [s_lo_double, s_hi_double];
+result.s_domain_text = {opt.s_lo_text,opt.s_hi_text};
 result.max_rayleigh_upper = max_upper;
 result.max_midpoint_ritz = max_midpoint;
 result.max_cell_id = max_cell;
 result.max_cell = [cells(max_cell).s_lo, cells(max_cell).s_hi];
 result.target_11_5_verified = is_interval && max_upper <= 11.5;
-if is_interval && ~isempty(opt.down_y_max)
-    result.down_y_max = opt.down_y_max;
+if is_interval && ~isempty(opt.down_y_max_text)
+    result.down_y_max = str2double(opt.down_y_max_text);
+    result.down_y_max_text = opt.down_y_max_text;
     result.down_y_cells = opt.down_y_cells;
     result.max_down_scaled_upper = max_down_scaled_upper;
     result.max_down_cell_id = max_down_cell;
@@ -193,34 +267,56 @@ if is_interval && ~isempty(opt.down_y_max)
     result.down_conjecture_verified = max_down_scaled_upper < 0;
 else
     result.down_y_max = [];
+    result.down_y_max_text = '';
     result.down_y_cells = 0;
     result.max_down_scaled_upper = NaN;
     result.max_down_cell_id = 0;
     result.max_down_cell = [];
 result.down_conjecture_verified = false;
 end
+result.frozen_coefficient_encoding = 'IEEE-754 binary64';
+result.coefficients = coefficients;
+result.polynomial_coefficient_encoding = ...
+    'directed IEEE-754 binary64 interval endpoints';
+result.polynomial_lower = polynomial_lower;
+result.polynomial_upper = polynomial_upper;
+result.r_eval_lo = r_eval_lo;
+result.r_eval_hi = r_eval_hi;
+result.down_scaled_lower_grid = down_scaled_lower_grid;
+result.down_scaled_upper_grid = down_scaled_upper_grid;
 result.cells = cells;
 
-function upper = local_down_scaled_upper( ...
-        s, rayleigh_upper, y_max, y_cells, pi_value)
+function [upper,lower_by_cell,upper_by_cell,r_lo,r_hi] = ...
+        local_down_scaled_upper( ...
+            s,rayleigh_upper,y_max_text,y_cells,pi_value)
 one = intval(1);
 mu = infsup(rayleigh_upper, rayleigh_upper);
-y_limit = intval(sprintf('%.17g', y_max));
-r_limit = sup(y_limit^(1/3));
+y_limit = intval(y_max_text);
+one_third = intval('1')/intval('3');
+two_thirds = intval('2')/intval('3');
+r_limit = sup(y_limit^one_third);
 nodes = linspace(0, r_limit, y_cells+1);
 x = (one+s)/2;
 r = infsup(nodes(1:end-1), nodes(2:end));
 y = r.^3;
 perimeter = one+sqrt(x^2+y.^2)+sqrt((one-x)^2+y.^2);
-scaled = 6*(2*one)^(2/3)*mu*r.^2+6*pi_value^2 ...
+scaled = 6*(2*one)^two_thirds*mu*r.^2+6*pi_value^2 ...
     -2*pi_value^2*perimeter.^2 ...
     -4*sqrt(3*one)*pi_value^2*y;
-upper = max(max(sup(scaled)));
+lower_by_cell = reshape(inf(scaled),1,[]);
+upper_by_cell = reshape(sup(scaled),1,[]);
+r_lo = reshape(inf(r),1,[]);
+r_hi = reshape(sup(r),1,[]);
+upper = max(upper_by_cell);
 end
 end
 
 function K = local_stiffness(t, s, basis, M, D, pi_value, is_interval)
-a = t^(2/3);
+if is_interval
+    a = t^(intval('2')/intval('3'));
+else
+    a = t^(2/3);
+end
 n = numel(basis.legendre_cell);
 if is_interval
     L = intval(zeros(n));
@@ -379,21 +475,20 @@ addParameter(p, 't', '0.38');
 addParameter(p, 'degree', 14);
 addParameter(p, 's_cells', 400);
 addParameter(p, 'progress_every', 0);
-addParameter(p, 's_lo', 0);
-addParameter(p, 's_hi', 1);
+addParameter(p, 's_lo', '0');
+addParameter(p, 's_hi', '1');
 addParameter(p, 'down_y_max', []);
 addParameter(p, 'down_y_cells', 20);
+addParameter(p, 'frozen_coefficients', []);
+addParameter(p, 'frozen_polynomial_lower', []);
+addParameter(p, 'frozen_polynomial_upper', []);
 parse(p, varargin{:});
 options = p.Results;
 options.mode = lower(char(options.mode));
 if ~ismember(options.mode, {'double','interval'})
     error('mode must be ''double'' or ''interval''.');
 end
-if isnumeric(options.t)
-    options.t_text = sprintf('%.17g', options.t);
-else
-    options.t_text = char(options.t);
-end
+options.t_text = local_decimal_text(options.t,'t');
 if ~(str2double(options.t_text) > 0)
     error('t must be positive.');
 end
@@ -403,25 +498,80 @@ end
 if options.s_cells < 1 || options.s_cells ~= floor(options.s_cells)
     error('s_cells must be a positive integer.');
 end
-if options.s_lo < 0 || options.s_hi > 1 || ...
-        options.s_lo >= options.s_hi
+options.s_lo_text = local_decimal_text(options.s_lo,'s_lo');
+options.s_hi_text = local_decimal_text(options.s_hi,'s_hi');
+s_lo = str2double(options.s_lo_text);
+s_hi = str2double(options.s_hi_text);
+if s_lo < 0 || s_hi > 1 || s_lo >= s_hi
     error('Require 0 <= s_lo < s_hi <= 1.');
 end
 if options.progress_every < 0 || ...
         options.progress_every ~= floor(options.progress_every)
     error('progress_every must be a nonnegative integer.');
 end
-if ~isempty(options.down_y_max) && options.down_y_max <= 0
-    error('down_y_max must be positive.');
+if isempty(options.down_y_max)
+    options.down_y_max_text = '';
+else
+    options.down_y_max_text = ...
+        local_decimal_text(options.down_y_max,'down_y_max');
+    if ~(str2double(options.down_y_max_text) > 0)
+        error('down_y_max must be positive.');
+    end
 end
 if options.down_y_cells < 1 || ...
         options.down_y_cells ~= floor(options.down_y_cells)
     error('down_y_cells must be a positive integer.');
 end
+if ~isempty(options.frozen_coefficients)
+    expected = [options.s_cells,options.degree];
+    if ~isnumeric(options.frozen_coefficients) ...
+            || ~isequal(size(options.frozen_coefficients),expected) ...
+            || ~all(isfinite(options.frozen_coefficients(:))) ...
+            || any(all(options.frozen_coefficients == 0,2))
+        error('frozen_coefficients must be a finite, nonzero %d-by-%d matrix.', ...
+            expected(1),expected(2));
+    end
+end
+has_lower = ~isempty(options.frozen_polynomial_lower);
+has_upper = ~isempty(options.frozen_polynomial_upper);
+if has_lower ~= has_upper
+    error(['frozen_polynomial_lower and frozen_polynomial_upper must ', ...
+        'be supplied together.']);
+end
+if has_lower
+    expected = [options.s_cells,options.degree+2];
+    if ~isnumeric(options.frozen_polynomial_lower) ...
+            || ~isnumeric(options.frozen_polynomial_upper) ...
+            || ~isequal(size(options.frozen_polynomial_lower),expected) ...
+            || ~isequal(size(options.frozen_polynomial_upper),expected) ...
+            || ~all(isfinite(options.frozen_polynomial_lower(:))) ...
+            || ~all(isfinite(options.frozen_polynomial_upper(:))) ...
+            || any(options.frozen_polynomial_lower(:) ...
+                > options.frozen_polynomial_upper(:))
+        error(['Frozen polynomial endpoints must be finite ordered ', ...
+            '%d-by-%d matrices.'],expected(1),expected(2));
+    end
+end
+end
+
+function value = local_decimal_text(value,name)
+if isnumeric(value) && isscalar(value) && isfinite(value)
+    value = sprintf('%.17g',value);
+elseif ischar(value) || (isstring(value) && isscalar(value))
+    value = strtrim(char(value));
+else
+    error('%s must be a finite scalar or decimal string.',name);
+end
+if isempty(regexp(value, ...
+        '^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$', ...
+        'once')) || ~isfinite(str2double(value))
+    error('%s must be a finite decimal string.',name);
+end
 end
 
 function local_start_intlab()
 if exist('intval', 'file') == 2
+    setround(0);
     return
 end
 intlab_root = getenv('INTLAB_ROOT');
@@ -433,6 +583,7 @@ evalc('startintlab');
 if exist('intval', 'file') ~= 2
     error('INTLAB initialization failed.');
 end
+setround(0);
 end
 
 function cell_result = local_empty_cell()
@@ -441,6 +592,10 @@ cell_result = struct( ...
     's_lo', NaN, ...
     's_hi', NaN, ...
     's_mid', NaN, ...
+    's_eval_lo', NaN, ...
+    's_eval_hi', NaN, ...
+    'mass_lower', NaN, ...
+    'mass_upper', NaN, ...
     'midpoint_ritz', NaN, ...
     'rayleigh_lower', NaN, ...
     'rayleigh_upper', NaN, ...

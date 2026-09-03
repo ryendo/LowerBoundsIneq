@@ -46,6 +46,12 @@ manifest = run_omega_mid_unified_parallel( ...
 assert(manifest.summary.exact_selected_id_coverage);
 assert(~manifest.summary.exact_full_input_id_coverage);
 assert(~manifest.complete_certificate);
+assert(manifest.summary.geometric_coverage_certified);
+assert(manifest.geometric_coverage.complete);
+assert(manifest.geometric_coverage.rigorous);
+assert(strcmp(manifest.geometric_coverage.status,'certified'));
+assert(manifest.geometric_coverage.proof.decimal_topology_exact);
+assert(~manifest.geometric_coverage.proof.arbitrary_tolerance_used);
 assert(manifest.summary.num_selected_cells == 4);
 assert(manifest.summary.num_strict_records == 4);
 assert(manifest.summary.num_J1_certified == 4);
@@ -63,6 +69,12 @@ assert(strcmp(manifest.input.sha256,ver10_file_sha256( ...
     fullfile(project_root,'inputs','cell_def.csv'))));
 assert(manifest.input.validation.ids_equal_row_numbers);
 assert(numel(manifest.fingerprint) == 64);
+assert(strcmp(manifest.config.schema, ...
+    'lowerboundsineq.omega_mid_unified.config.v3'));
+assert(isfield(manifest.config,'runtime'));
+assert(isfield(manifest.config,'runtime_sha256'));
+assert(numel(manifest.config.runtime_sha256) == 64);
+assert(isequaln(manifest.config.runtime,manifest.runtime));
 assert(numel(manifest.config.source_normalized_porcelain_sha256) == 64);
 assert(numel(manifest.config.source_dirty_content_sha256) == 64);
 assert(numel(manifest.config.source_state_sha256) == 64);
@@ -85,13 +97,22 @@ run_dir = fullfile(output_dir,'targeted_regression');
 j1_path = fullfile(run_dir,'J1_OmegaMid.csv');
 j2_path = fullfile(run_dir,'J2_OmegaMid.csv');
 json_path = fullfile(run_dir,'omega_mid_unified_manifest.json');
+coverage_json_path = fullfile( ...
+    run_dir,'omega_mid_geometric_coverage_manifest.json');
 mat_path = fullfile(run_dir,'omega_mid_unified_results.mat');
+config_path = fullfile(run_dir,'config.mat');
 J1 = readtable(j1_path,'TextType','string');
 J2 = readtable(j2_path,'TextType','string');
 saved_results = load(mat_path,'records','config');
 saved_records = saved_results.records;
 assert(strcmp(saved_results.config.LG_escalation_policy, ...
     'LG-input-or-terminal-depth-after-CR-refinement-v1'));
+saved_config = load(config_path, ...
+    'config','fingerprint','fingerprint_payload');
+assert(isequaln(saved_config.config,manifest.config));
+assert(strcmp(saved_config.fingerprint,manifest.fingerprint));
+assert(contains(saved_config.fingerprint_payload, ...
+    ['runtime=',manifest.config.runtime_sha256]));
 for q = 1:numel(saved_records)
     accepted_leaves = saved_records{q}.leaves;
     assert(~isempty(accepted_leaves));
@@ -212,6 +233,52 @@ assert(~contains(json_text,project_root));
 assert(~contains(json_text,output_dir));
 assert(strcmp(manifest.hashes.J1_csv,ver10_file_sha256(j1_path)));
 assert(strcmp(manifest.hashes.J2_csv,ver10_file_sha256(j2_path)));
+assert(strcmp(manifest.hashes.geometric_coverage_json, ...
+    ver10_file_sha256(coverage_json_path)));
+assert(strcmp(manifest.hashes.mat,ver10_file_sha256(mat_path)));
+assert(strcmp(manifest.hashes.config_mat, ...
+    ver10_file_sha256(config_path)));
+coverage_json = jsondecode(fileread(coverage_json_path));
+assert(coverage_json.complete && coverage_json.rigorous);
+assert(strcmp(coverage_json.hashes.proof_payload, ...
+    manifest.geometric_coverage.hashes.proof_payload));
+
+% All replay artifacts, including the MAT file that carries complete leaf
+% and attempt histories, must be bound to the unified manifest.  Appending
+% one byte to each artifact must make the publication validator fail before
+% any copied generation can be accepted.
+artifact_options = { ...
+    'require_complete',false, ...
+    'J1_file',j1_path,'J2_file',j2_path, ...
+    'coverage_file',coverage_json_path, ...
+    'mat_file',mat_path,'config_file',config_path, ...
+    'unified_manifest_file',json_path};
+binding = validate_omega_mid_unified_artifacts( ...
+    manifest,project_root,artifact_options{:});
+assert(binding.records_variable_count == numel(target_ids));
+assert(strcmp(binding.leaf_attempt_evidence, ...
+    'mat:records(:).leaves(:).attempts'));
+tamper_dir = fullfile(output_dir,'artifact_tamper');
+mkdir(tamper_dir);
+tamper_sources = {j1_path,j2_path,coverage_json_path, ...
+    mat_path,config_path};
+tamper_options = {'J1_file','J2_file','coverage_file', ...
+    'mat_file','config_file'};
+for q = 1:numel(tamper_sources)
+    [~,tamper_name,tamper_extension] = fileparts(tamper_sources{q});
+    tampered = fullfile(tamper_dir, ...
+        [tamper_name,'_tampered',tamper_extension]);
+    [copied,message] = copyfile(tamper_sources{q},tampered,'f');
+    assert(copied,message);
+    local_append_tamper_byte(tampered);
+    options = artifact_options;
+    option_index = find(strcmp(options,tamper_options{q}),1);
+    assert(~isempty(option_index));
+    options{option_index+1} = tampered;
+    local_assert_artifact_hash_rejected(@() ...
+        validate_omega_mid_unified_artifacts( ...
+            manifest,project_root,options{:}));
+end
 
 % A second invocation must use all four checkpoint records and perform no
 % new cell solve.
@@ -338,9 +405,37 @@ fprintf(['terminal fail-closed certificate: status=%s, ', ...
 fprintf(['test_omega_mid_unified_driver: PASS ', ...
     '(CR=1, LG=2, subdivision=1, resumed=4, ', ...
     'corrupt-leaf checkpoint repaired=1, ', ...
-    'terminal fail-closed=1)\n']);
+    'artifact tamper cases=5, terminal fail-closed=1)\n']);
 clear cleanup
 local_remove_tree(output_dir);
+end
+
+
+function local_append_tamper_byte(filename)
+fid = fopen(filename,'ab');
+if fid < 0
+    error('test_omega_mid_unified_driver:TamperOpenFailed', ...
+        'Could not open tamper fixture %s.',filename);
+end
+cleanup = onCleanup(@() fclose(fid));
+fwrite(fid,uint8(10),'uint8');
+clear cleanup
+end
+
+
+function local_assert_artifact_hash_rejected(callback)
+caught = false;
+try
+    callback();
+catch ME
+    if ~strcmp(ME.identifier, ...
+            ['validate_omega_mid_unified_artifacts:', ...
+             'ArtifactHashMismatch'])
+        rethrow(ME);
+    end
+    caught = true;
+end
+assert(caught);
 end
 
 

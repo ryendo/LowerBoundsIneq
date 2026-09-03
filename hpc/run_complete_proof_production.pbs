@@ -1,0 +1,544 @@
+#!/usr/bin/env bash
+#PBS -S /bin/bash
+#PBS -N phanuel-proof
+#PBS -q normal
+#PBS -l nodes=1:ppn=20
+#PBS -l mem=160gb
+#PBS -l walltime=12:00:00
+#PBS -o /dev/shm/rendo-phanuel-20260903-104720-complete-proof/state/production.stdout
+#PBS -e /dev/shm/rendo-phanuel-20260903-104720-complete-proof/state/production.stderr
+
+set -euo pipefail
+umask 077
+cd "$PBS_O_WORKDIR"
+
+SCRATCH_ROOT="/dev/shm/rendo-phanuel-20260903-104720-complete-proof"
+STATE_DIR="$SCRATCH_ROOT/state"
+SOURCE_DIR="$SCRATCH_ROOT/source"
+OUTPUT_ROOT="$SCRATCH_ROOT/certificate-output"
+export INTLAB_ROOT="/home/rendo/tmp/Intlab_V12_nqc_01"
+export GMSH_COMMAND="/usr/bin/gmsh"
+export VER10_CERTIFICATE_ROOT="$OUTPUT_ROOT"
+export VER10_SPECTRAL_ATLAS="$OUTPUT_ROOT/omega_up_spectral_atlas_9x5.mat"
+export VER10_ATLAS_NX=9
+export VER10_ATLAS_NY=5
+export VER10_ATLAS_WORKERS=20
+export VER10_SPECTRAL_REPLAY_WORKERS=20
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export VER10_PARALLEL_JOB_STORAGE="$SCRATCH_ROOT/matlab-job-storage-production"
+export MATLAB_PREFDIR="$STATE_DIR/matlab-prefs-production"
+export TMPDIR="$SCRATCH_ROOT/tmp-production"
+
+test -n "${PBS_JOBID:-}"
+test -n "${PBS_NODEFILE:-}"
+test -r "$PBS_NODEFILE"
+test -d "$SCRATCH_ROOT"
+test "$(stat -c '%u' "$SCRATCH_ROOT")" = "$(id -u)"
+test "$(stat -c '%a' "$SCRATCH_ROOT")" = 700
+test "$(stat -f -c '%T' "$SCRATCH_ROOT")" = tmpfs
+test "$(readlink -f "$PBS_O_WORKDIR")" = "$STATE_DIR"
+test -d "$SOURCE_DIR/.git"
+test -f "$INTLAB_ROOT/startintlab.m"
+test -x "$GMSH_COMMAND"
+mkdir -p "$STATE_DIR" "$OUTPUT_ROOT" "$MATLAB_PREFDIR" "$TMPDIR" \
+  "$VER10_PARALLEL_JOB_STORAGE"
+
+ALLOCATED_SLOTS="$(wc -l < "$PBS_NODEFILE")"
+ALLOCATED_NODES="$(sort -u "$PBS_NODEFILE" | wc -l)"
+if (( ALLOCATED_SLOTS < 20 || ALLOCATED_NODES != 1 )); then
+  printf 'Expected one node and at least 20 slots; got nodes=%s slots=%s.\n' \
+    "$ALLOCATED_NODES" "$ALLOCATED_SLOTS" >&2
+  exit 75
+fi
+
+# Serialize all complete-proof smoke/probe/production wrappers that share
+# this source and scratch tree.  flock has no stale-lock recovery problem:
+# the kernel releases the lock if PBS kills the job.
+exec 9> "$STATE_DIR/complete-proof.lock"
+if ! /usr/bin/flock -n 9; then
+  printf 'Another complete-proof wrapper is using %s.\n' "$SCRATCH_ROOT" >&2
+  exit 75
+fi
+
+# This host currently has no usable space on /home.  The complete job uses
+# node-local tmpfs and starts only with explicit combined memory/scratch
+# headroom.  The successful representative probe below fixes the memory
+# threshold for this exact source commit.
+MEM_AVAILABLE_KIB="$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)"
+SCRATCH_AVAILABLE_KIB="$(df --output=avail -k "$SCRATCH_ROOT" | tail -n 1)"
+SCRATCH_AVAILABLE_INODES="$(df --output=iavail "$SCRATCH_ROOT" | tail -n 1)"
+if (( SCRATCH_AVAILABLE_KIB < 41943040 )); then
+  printf 'Only %s KiB tmpfs scratch is available; 40 GiB is required.\n' \
+    "$SCRATCH_AVAILABLE_KIB" >&2
+  exit 75
+fi
+if (( SCRATCH_AVAILABLE_INODES < 600000 )); then
+  printf 'Only %s tmpfs inodes are available; 600000 are required.\n' \
+    "$SCRATCH_AVAILABLE_INODES" >&2
+  exit 75
+fi
+test -w "$VER10_PARALLEL_JOB_STORAGE"
+cd "$SOURCE_DIR"
+CURRENT_SOURCE_COMMIT="$(git rev-parse --verify HEAD)"
+PINNED_SOURCE_COMMIT_FILE="$STATE_DIR/staged-source-commit.txt"
+if test -e "$PINNED_SOURCE_COMMIT_FILE"; then
+  test -f "$PINNED_SOURCE_COMMIT_FILE"
+  test ! -L "$PINNED_SOURCE_COMMIT_FILE"
+  test "$(wc -l < "$PINNED_SOURCE_COMMIT_FILE")" = 1
+  PINNED_SOURCE_COMMIT="$(sed -n '1p' "$PINNED_SOURCE_COMMIT_FILE")"
+  if test "$CURRENT_SOURCE_COMMIT" != "$PINNED_SOURCE_COMMIT"; then
+    printf 'Source commit changed from %s to %s; restage a fresh job tree.\n' \
+      "$PINNED_SOURCE_COMMIT" "$CURRENT_SOURCE_COMMIT" >&2
+    exit 75
+  fi
+else
+  PINNED_SOURCE_COMMIT_STAGE="$(mktemp "$STATE_DIR/.source-commit.XXXXXX")"
+  printf '%s\n' "$CURRENT_SOURCE_COMMIT" > "$PINNED_SOURCE_COMMIT_STAGE"
+  mv "$PINNED_SOURCE_COMMIT_STAGE" "$PINNED_SOURCE_COMMIT_FILE"
+fi
+printf '%s\n' "$CURRENT_SOURCE_COMMIT" \
+  > "$STATE_DIR/production-source-commit.txt"
+
+EXPECTED_SMOKE_COMPLETION="release suite passed at $CURRENT_SOURCE_COMMIT"
+test -f "$STATE_DIR/smoke-complete.txt"
+test "$(cat "$STATE_DIR/smoke-complete.txt")" = "$EXPECTED_SMOKE_COMPLETION"
+SMOKE_STARTED="$STATE_DIR/smoke-started.txt"
+test -s "$SMOKE_STARTED"
+test "$(awk -F= '$1=="source_commit" {print $2}' "$SMOKE_STARTED")" \
+  = "$CURRENT_SOURCE_COMMIT"
+SMOKE_JOB_ID="$(awk -F= '$1=="pbs_job_id" {print $2}' "$SMOKE_STARTED")"
+[[ "$SMOKE_JOB_ID" =~ ^[A-Za-z0-9._-]+$ ]]
+SMOKE_COMPLETE_HASH="$STATE_DIR/smoke-complete.sha256"
+test -s "$SMOKE_COMPLETE_HASH"
+test ! -L "$SMOKE_COMPLETE_HASH"
+awk -v job="$SMOKE_JOB_ID" '
+  NF != 2 { exit 1 }
+  length($1) != 64 || $1 ~ /[^0-9a-f]/ { exit 1 }
+  $2 == "state/smoke-started.txt" { started += 1; next }
+  $2 == "state/smoke-source-commit.txt" { source += 1; next }
+  $2 == "state/smoke-complete.txt" { complete += 1; next }
+  $2 == "state/smoke-" job ".time" { timing += 1; next }
+  $2 == "state/smoke-" job ".log" { log_count += 1; next }
+  { exit 1 }
+  END {
+    if (started != 1 || source != 1 || complete != 1 \
+        || timing != 1 || log_count != 1) exit 1
+  }
+' "$SMOKE_COMPLETE_HASH"
+(cd "$SCRATCH_ROOT" \
+  && sha256sum -c "state/$(basename "$SMOKE_COMPLETE_HASH")")
+
+PROBE_SUMMARY="$STATE_DIR/probe-summary.txt"
+PROBE_SUMMARY_SHA="$STATE_DIR/probe-summary.sha256"
+test -s "$PROBE_SUMMARY"
+test ! -L "$PROBE_SUMMARY"
+test -s "$PROBE_SUMMARY_SHA"
+test ! -L "$PROBE_SUMMARY_SHA"
+test "$(wc -l < "$PROBE_SUMMARY_SHA")" = 1
+test "$(awk '{print $2}' "$PROBE_SUMMARY_SHA")" = probe-summary.txt
+(cd "$STATE_DIR" && sha256sum -c "$(basename "$PROBE_SUMMARY_SHA")")
+
+probe_field() {
+  local key="$1"
+  awk -F= -v wanted="$key" '
+    $1 == wanted { count += 1; value=substr($0,length($1)+2) }
+    END {
+      if (count != 1 || value == "") exit 1
+      print value
+    }
+  ' "$PROBE_SUMMARY"
+}
+
+PROBE_SOURCE_COMMIT="$(probe_field source_commit)"
+PROBE_JOB_ID="$(probe_field pbs_job_id)"
+PROBE_WORKERS="$(probe_field workers)"
+PROBE_SELECTED_CELLS="$(probe_field selected_cells)"
+PROBE_MODE="$(probe_field mode)"
+PROBE_CHUNK_SIZE="$(probe_field chunk_size)"
+PROBE_CHECKPOINT_EVERY="$(probe_field checkpoint_every)"
+PROBE_MAX_DEPTH="$(probe_field max_subdivision_depth)"
+PROBE_MAX_FEM_LEVEL="$(probe_field max_fem_refinement_level)"
+PROBE_MIN_CR="$(probe_field minimum_cr_mesh_size)"
+PROBE_MIN_LG="$(probe_field minimum_lg_mesh_size)"
+PROBE_MAX_RSS_KIB="$(probe_field maximum_resident_set_kib)"
+PROBE_PEAK_AGGREGATE_RSS_KIB="$(probe_field peak_aggregate_job_rss_kib)"
+test "$PROBE_SOURCE_COMMIT" = "$CURRENT_SOURCE_COMMIT"
+[[ "$PROBE_JOB_ID" =~ ^[A-Za-z0-9._-]+$ ]]
+test "$PROBE_WORKERS" = 2
+test "$PROBE_SELECTED_CELLS" = 1,11731,138748,152387
+test "$PROBE_MODE" = interval
+test "$PROBE_CHUNK_SIZE" = 2
+test "$PROBE_CHECKPOINT_EVERY" = 1
+test "$PROBE_MAX_DEPTH" = 8
+test "$PROBE_MAX_FEM_LEVEL" = 2
+test "$PROBE_MIN_CR" = 0.005
+test "$PROBE_MIN_LG" = 0.025
+[[ "$PROBE_MAX_RSS_KIB" =~ ^[0-9]+$ ]]
+[[ "$PROBE_PEAK_AGGREGATE_RSS_KIB" =~ ^[0-9]+$ ]]
+(( PROBE_MAX_RSS_KIB > 0 ))
+(( PROBE_PEAK_AGGREGATE_RSS_KIB >= PROBE_MAX_RSS_KIB ))
+
+PROBE_STARTED="$STATE_DIR/probe-started.txt"
+test -s "$PROBE_STARTED"
+test "$(awk -F= '$1=="source_commit" {print $2}' "$PROBE_STARTED")" \
+  = "$CURRENT_SOURCE_COMMIT"
+test "$(awk -F= '$1=="pbs_job_id" {print $2}' "$PROBE_STARTED")" \
+  = "$PROBE_JOB_ID"
+PROBE_COMPLETE="$STATE_DIR/probe-complete.sha256"
+test -s "$PROBE_COMPLETE"
+test ! -L "$PROBE_COMPLETE"
+awk -v job="$PROBE_JOB_ID" '
+  NF != 2 { exit 1 }
+  length($1) != 64 || $1 ~ /[^0-9a-f]/ { exit 1 }
+  $2 ~ /^\// || $2 ~ /(^|\/)\.\.(\/|$)/ { exit 1 }
+  $2 == "state/probe-started.txt" { started += 1; next }
+  $2 == "state/probe-summary.txt" { summary += 1; next }
+  $2 == "state/probe-summary.sha256" { summary_sha += 1; next }
+  $2 == "state/probe-" job ".time" { timing += 1; next }
+  $2 == "state/probe-" job ".log" { log_count += 1; next }
+  $2 == "state/probe-resources-" job ".log" { resources += 1; next }
+  index($2,"resource-probe-output-" job "/") == 1 { output += 1; next }
+  { exit 1 }
+  END {
+    if (started != 1 || summary != 1 || summary_sha != 1 \
+        || timing != 1 || log_count != 1 || resources != 1 || output < 6) exit 1
+  }
+' "$PROBE_COMPLETE"
+(cd "$SCRATCH_ROOT" && sha256sum -c "state/$(basename "$PROBE_COMPLETE")")
+
+# Conservatively scale the measured two-worker aggregate RSS to 20 workers,
+# add 25%, then reserve 25 GiB for expected tmpfs growth and 16 GiB for the
+# operating system/measurement uncertainty.  Never accept less than 128 GiB
+# initial MemAvailable.  The RSS estimate must also fit below the 160 GiB PBS
+# allocation with a 10 GiB process-memory guard.
+PRODUCTION_WORKERS=20
+RSS_LINEAR_ESTIMATE_KIB=$(( \
+  (PROBE_PEAK_AGGREGATE_RSS_KIB*PRODUCTION_WORKERS+PROBE_WORKERS-1) \
+  / PROBE_WORKERS ))
+RSS_SAFETY_ESTIMATE_KIB=$(( \
+  (RSS_LINEAR_ESTIMATE_KIB*5+3)/4 ))
+EXPECTED_SCRATCH_GROWTH_KIB=26214400
+SYSTEM_RESERVE_KIB=16777216
+MINIMUM_COMBINED_HEADROOM_KIB=134217728
+PBS_PROCESS_GUARD_KIB=157286400
+if (( RSS_SAFETY_ESTIMATE_KIB > PBS_PROCESS_GUARD_KIB )); then
+  printf 'Probe-scaled RSS %s KiB does not fit the guarded 160 GiB allocation.\n' \
+    "$RSS_SAFETY_ESTIMATE_KIB" >&2
+  exit 75
+fi
+REQUIRED_MEM_AVAILABLE_KIB=$(( \
+  RSS_SAFETY_ESTIMATE_KIB+EXPECTED_SCRATCH_GROWTH_KIB+SYSTEM_RESERVE_KIB ))
+if (( REQUIRED_MEM_AVAILABLE_KIB < MINIMUM_COMBINED_HEADROOM_KIB )); then
+  REQUIRED_MEM_AVAILABLE_KIB="$MINIMUM_COMBINED_HEADROOM_KIB"
+fi
+if (( MEM_AVAILABLE_KIB < REQUIRED_MEM_AVAILABLE_KIB )); then
+  printf 'Only %s KiB MemAvailable; probe-scaled combined gate is %s KiB.\n' \
+    "$MEM_AVAILABLE_KIB" "$REQUIRED_MEM_AVAILABLE_KIB" >&2
+  exit 75
+fi
+SIZING_STAGE="$(mktemp "$STATE_DIR/.production-sizing.XXXXXX")"
+{
+  printf 'probe_peak_aggregate_job_rss_kib=%s\n' \
+    "$PROBE_PEAK_AGGREGATE_RSS_KIB"
+  printf 'production_rss_safety_estimate_kib=%s\n' \
+    "$RSS_SAFETY_ESTIMATE_KIB"
+  printf 'expected_scratch_growth_kib=%s\n' \
+    "$EXPECTED_SCRATCH_GROWTH_KIB"
+  printf 'system_reserve_kib=%s\n' "$SYSTEM_RESERVE_KIB"
+  printf 'required_mem_available_kib=%s\n' "$REQUIRED_MEM_AVAILABLE_KIB"
+  printf 'observed_mem_available_kib=%s\n' "$MEM_AVAILABLE_KIB"
+  printf 'required_scratch_available_kib=%s\n' 41943040
+  printf 'observed_scratch_available_kib=%s\n' "$SCRATCH_AVAILABLE_KIB"
+} > "$SIZING_STAGE"
+mv "$SIZING_STAGE" "$STATE_DIR/production-sizing.txt"
+
+export VER10_RELEASE_REPOSITORY="ryendo/LowerBoundsIneq"
+export VER10_RELEASE_TAG="complete-proof-20260903"
+UPPER_MARKER="$STATE_DIR/upper-complete.sha256"
+OMEGA_MID_MARKER="$STATE_DIR/omega-mid-complete.sha256"
+PRODUCTION_MARKER="$STATE_DIR/production-complete.sha256"
+
+run_matlab() {
+  local label="$1"
+  local expression="$2"
+  /usr/bin/time -v -o "$STATE_DIR/${label}.time" \
+    /usr/local/bin/matlab -batch "$expression" \
+    > "$STATE_DIR/${label}.log" 2>&1
+}
+
+inventory_valid() {
+  local inventory="$1"
+  local scope="$2"
+  test -s "$inventory" && test ! -L "$inventory" \
+    && awk -v scope="$scope" '
+      NF != 2 { exit 1 }
+      length($1) != 64 || $1 ~ /[^0-9a-f]/ { exit 1 }
+      $2 ~ /^\// || $2 ~ /(^|\/)\.\.(\/|$)/ { exit 1 }
+      scope == "upper" && index($2,"certificate-output/") != 1 { exit 1 }
+      scope == "omega-mid" && index($2,"source/results/") != 1 { exit 1 }
+      END { if (NR == 0) exit 1 }
+    ' "$inventory" \
+    && (cd "$SCRATCH_ROOT" && sha256sum -c "$inventory" >/dev/null 2>&1)
+}
+
+write_inventory() {
+  local inventory="$1"
+  shift
+  local temporary target relative symbolic_link
+  local -a relative_targets=()
+  for target in "$@"; do
+    case "$target" in
+      "$SCRATCH_ROOT"/*)
+        relative="${target#"$SCRATCH_ROOT"/}"
+        relative_targets+=("$relative")
+        ;;
+      *)
+        printf 'Inventory target escapes scratch root: %s\n' "$target" >&2
+        return 1
+        ;;
+    esac
+  done
+  symbolic_link="$(
+    cd "$SCRATCH_ROOT"
+    find "${relative_targets[@]}" -type l -print -quit
+  )"
+  if test -n "$symbolic_link"; then
+    printf 'Inventory targets contain a symbolic link.\n' >&2
+    return 1
+  fi
+  temporary="$(mktemp "$STATE_DIR/.inventory.XXXXXX")"
+  (
+    cd "$SCRATCH_ROOT"
+    find "${relative_targets[@]}" \
+      \( -type d -name checkpoints -prune \) -o \
+      -type f -print0 | sort -z | xargs -0 -r sha256sum
+  ) > "$temporary"
+  test -s "$temporary"
+  mv "$temporary" "$inventory"
+}
+
+cleanup_checkpoints() {
+  local directory="$1"
+  local filename_regex="$2"
+  local expected_count="$3"
+  local label="$4"
+  local expected_names_digest="$5"
+  if ! test -d "$directory"; then
+    return
+  fi
+  local entry_count total_count matched_count names_digest cleanup_stage
+  entry_count="$(find "$directory" -mindepth 1 -maxdepth 1 | wc -l)"
+  total_count="$(find "$directory" -mindepth 1 -maxdepth 1 \
+    -type f | wc -l)"
+  matched_count="$(find "$directory" -mindepth 1 -maxdepth 1 \
+    -type f -regextype posix-extended -regex "$filename_regex" | wc -l)"
+  names_digest="$(find "$directory" -mindepth 1 -maxdepth 1 \
+    -type f -printf '%f\n' | sort | sha256sum | awk '{print $1}')"
+  if (( entry_count != expected_count \
+        || total_count != expected_count \
+        || matched_count != expected_count )) \
+      || test "$names_digest" != "$expected_names_digest"; then
+    printf 'Retaining %s checkpoints: entries=%s files=%s matched=%s digest=%s.\n' \
+      "$label" "$entry_count" "$total_count" "$matched_count" \
+      "$names_digest" >&2
+    return
+  fi
+  cleanup_stage="$(mktemp "$STATE_DIR/.cleanup-${label}.XXXXXX")"
+  printf '%s %s %s\n' "$expected_count" "$names_digest" "$directory" \
+    > "$cleanup_stage"
+  find "$directory" -mindepth 1 -maxdepth 1 -type f \
+    -regextype posix-extended -regex "$filename_regex" -delete
+  rmdir "$directory"
+  mv "$cleanup_stage" "$STATE_DIR/deleted-${label}-checkpoints.txt"
+  printf 'Removed %s merged %s checkpoints (name digest %s).\n' \
+    "$expected_count" "$label" "$names_digest"
+}
+
+job_rss_sample() {
+  local environment status rss
+  local process_count=0
+  local total_rss_kib=0
+  for environment in /proc/[0-9]*/environ; do
+    if /usr/bin/grep -Fzqx "PBS_JOBID=$PBS_JOBID" "$environment" \
+        2>/dev/null; then
+      status="${environment%/environ}/status"
+      rss="$(awk '/^VmRSS:/ {print $2}' "$status" 2>/dev/null || true)"
+      if [[ "$rss" =~ ^[0-9]+$ ]]; then
+        total_rss_kib=$((total_rss_kib+rss))
+        process_count=$((process_count+1))
+      fi
+    fi
+  done
+  printf '%s %s' "$process_count" "$total_rss_kib"
+}
+
+monitor_resources() {
+  local job_sample
+  while true; do
+    job_sample="$(job_rss_sample)"
+    printf '%s job_processes=%s job_rss_kib=%s mem_available_kib=%s shm_available_kib=%s shm_ifree=%s\n' \
+      "$(date -Is)" "${job_sample%% *}" "${job_sample##* }" \
+      "$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)" \
+      "$(df --output=avail -k "$SCRATCH_ROOT" | tail -n 1)" \
+      "$(df --output=iavail "$SCRATCH_ROOT" | tail -n 1)"
+    sleep 60
+  done
+}
+monitor_resources > "$STATE_DIR/resources.log" 2>&1 &
+MONITOR_PID="$!"
+trap 'kill "$MONITOR_PID" 2>/dev/null || true' EXIT
+
+# Upper certificate phase.  A valid marker excludes restart checkpoints and
+# lets a later Omega_mid retry avoid recomputing the completed upper proof.
+if inventory_valid "$UPPER_MARKER" upper; then
+  printf 'Reusing hash-validated upper certificate phase.\n'
+else
+  SOURCE_STATUS_BEFORE_UPPER="$(git status \
+    --porcelain=v1 --untracked-files=all)"
+  test -z "$SOURCE_STATUS_BEFORE_UPPER"
+  UPPER_TRANSIENT="$(find "$OUTPUT_ROOT" -mindepth 1 \
+      \( -name '.thin-stage-*' -o -name '.omega_up_spectral_atlas_*' \
+         -o -name '.manifest.*' -o -name '.atlas.*' \) \
+      -print -quit)"
+  if test -n "$UPPER_TRANSIENT"; then
+    printf 'A prior upper-stage path remains; inspect it before retrying.\n' >&2
+    exit 75
+  fi
+
+  FINAL_SPECTRAL_ATLAS="$OUTPUT_ROOT/omega_up_spectral_atlas_9x5.mat"
+  if test ! -f "$FINAL_SPECTRAL_ATLAS"; then
+    SPECTRAL_STAGE="$OUTPUT_ROOT/.omega_up_spectral_atlas_${PBS_JOBID}.mat"
+    test ! -e "$SPECTRAL_STAGE"
+    export VER10_SPECTRAL_ATLAS="$SPECTRAL_STAGE"
+    run_matlab spectral-atlas \
+      "run('scripts_run/run_omega_up_spectral_atlas.m')"
+    mv "$SPECTRAL_STAGE" "$FINAL_SPECTRAL_ATLAS"
+  fi
+  export VER10_SPECTRAL_ATLAS="$FINAL_SPECTRAL_ATLAS"
+  run_matlab spectral-atlas-validate \
+    "addpath('scripts_run'); omega_up_all_prepare_worker(pwd,'interval'); load(getenv('VER10_SPECTRAL_ATLAS'),'atlas'); assert(atlas.rigorous); assert(atlas.Nx_anchor==9); assert(atlas.Ny_anchor==5); assert(atlas.num_certificates==45)"
+
+  run_matlab upper-residual \
+    "run('scripts_run/run_omega_up_residual_full.m')"
+
+  THIN_DIR="$OUTPUT_ROOT/muhat1_rayleigh_t038"
+  if test ! -f "$THIN_DIR/manifest.json"; then
+    THIN_STAGE_ROOT="$OUTPUT_ROOT/.thin-stage-${PBS_JOBID}"
+    test ! -e "$THIN_STAGE_ROOT"
+    mkdir "$THIN_STAGE_ROOT"
+    SAVED_CERTIFICATE_ROOT="$VER10_CERTIFICATE_ROOT"
+    export VER10_CERTIFICATE_ROOT="$THIN_STAGE_ROOT"
+    run_matlab thin-rayleigh \
+      "run('scripts_run/run_muhat1_rayleigh_hpc.m')"
+    export VER10_CERTIFICATE_ROOT="$SAVED_CERTIFICATE_ROOT"
+    mv "$THIN_STAGE_ROOT/muhat1_rayleigh_t038" "$THIN_DIR"
+    rmdir "$THIN_STAGE_ROOT"
+  else
+    run_matlab thin-rayleigh-validate \
+      "addpath('src/degenerate'); addpath('scripts_run'); r=validate_muhat1_rayleigh_certificate(fullfile(getenv('VER10_CERTIFICATE_ROOT'),'muhat1_rayleigh_t038','manifest.json')); assert(r.complete)"
+  fi
+
+  AFFINE_DIR="$OUTPUT_ROOT/upper-affine-component"
+  mkdir -p "$AFFINE_DIR"
+  AFFINE_MANIFEST_NAME="upper_manifest_interval_20260728_162102.json"
+  AFFINE_CSV_NAME="upper_atlas_interval_20260728_162102.csv"
+  AFFINE_CSV_SHA256="a8fc39c8a5a38c8fb6e4ee926261e3952281f183f1371b96e42c95bee2787074"
+  if test ! -f "$AFFINE_DIR/$AFFINE_MANIFEST_NAME"; then
+    AFFINE_MANIFEST_STAGE="$(mktemp "$AFFINE_DIR/.manifest.XXXXXX")"
+    cp "$SOURCE_DIR/results/paper_certificates/upper_affine_atlas/$AFFINE_MANIFEST_NAME" \
+      "$AFFINE_MANIFEST_STAGE"
+    mv "$AFFINE_MANIFEST_STAGE" "$AFFINE_DIR/$AFFINE_MANIFEST_NAME"
+  fi
+  cmp "$SOURCE_DIR/results/paper_certificates/upper_affine_atlas/$AFFINE_MANIFEST_NAME" \
+    "$AFFINE_DIR/$AFFINE_MANIFEST_NAME"
+  if ! printf '%s  %s\n' "$AFFINE_CSV_SHA256" \
+      "$AFFINE_DIR/$AFFINE_CSV_NAME" | sha256sum -c - >/dev/null 2>&1; then
+    AFFINE_CSV_STAGE="$(mktemp "$AFFINE_DIR/.atlas.XXXXXX")"
+    gzip -dc "$SOURCE_DIR/results/paper_certificates/upper_affine_atlas/$AFFINE_CSV_NAME.gz" \
+      > "$AFFINE_CSV_STAGE"
+    printf '%s  %s\n' "$AFFINE_CSV_SHA256" "$AFFINE_CSV_STAGE" \
+      | sha256sum -c -
+    mv "$AFFINE_CSV_STAGE" "$AFFINE_DIR/$AFFINE_CSV_NAME"
+  fi
+
+  export VER10_THIN_MANIFEST="$THIN_DIR/manifest.json"
+  export VER10_COMPACT_UPPER_MANIFEST="$AFFINE_DIR/$AFFINE_MANIFEST_NAME"
+  export VER10_OMEGA_UP_MANIFEST="$OUTPUT_ROOT/omega_up_all_residual/ver10_omega_up_bernstein_split_prod/omega_up_all_manifest.json"
+  test -f "$VER10_THIN_MANIFEST"
+  test -f "$VER10_COMPACT_UPPER_MANIFEST"
+  test -f "$VER10_OMEGA_UP_MANIFEST"
+  run_matlab upper-global-finalize \
+    "run('scripts_run/run_upper_rayleigh_global_finalize.m')"
+
+  UPPER_TRANSIENT="$(find "$OUTPUT_ROOT" -mindepth 1 \
+      \( -name '.thin-stage-*' -o -name '.omega_up_spectral_atlas_*' \
+         -o -name '.manifest.*' -o -name '.atlas.*' \) \
+      -print -quit)"
+  if test -n "$UPPER_TRANSIENT"; then
+    printf 'Transient upper-stage paths remain; refusing completion marker.\n' >&2
+    exit 75
+  fi
+  write_inventory "$UPPER_MARKER" "$OUTPUT_ROOT"
+  inventory_valid "$UPPER_MARKER" upper
+fi
+
+# Only a fully hash-inventoried upper phase may discard its restart files.
+RESIDUAL_CHECKPOINT_DIR="$OUTPUT_ROOT/omega_up_all_residual/ver10_omega_up_bernstein_split_prod/checkpoints"
+cleanup_checkpoints "$RESIDUAL_CHECKPOINT_DIR" \
+  '.*/task_[0-9]{6}\.mat' 478240 residual \
+  fc8f102f2089291e1bdb8ba6a1f08880b1b299801e1bec051bb3c55204687cae
+
+# The wrapper performs journal recovery before it asks its clean-source
+# production driver to resume.  A successful marker avoids entering it again
+# after the intentionally tracked canonical CSV publication.
+if inventory_valid "$OMEGA_MID_MARKER" omega-mid; then
+  printf 'Reusing hash-validated Omega_mid certificate phase.\n'
+else
+  run_matlab omega-mid \
+    "run('scripts_run/run_omega_mid_unified_full.m')"
+  write_inventory "$OMEGA_MID_MARKER" \
+    "$SOURCE_DIR/results/J1_OmegaMid.csv" \
+    "$SOURCE_DIR/results/J2_OmegaMid.csv" \
+    "$SOURCE_DIR/results/verification_summary.json" \
+    "$SOURCE_DIR/results/verification_summary.md" \
+    "$SOURCE_DIR/results/omega_mid_current.json" \
+    "$SOURCE_DIR/results/omega_mid_unified" \
+    "$SOURCE_DIR/results/omega_mid_publications"
+  inventory_valid "$OMEGA_MID_MARKER" omega-mid
+fi
+
+# The immutable generation contains a verified copy of the final MAT/config.
+# Delete only the exact 737 completed chunk names, after the phase marker.
+OMEGA_MID_CHECKPOINT_DIR="$SOURCE_DIR/results/omega_mid_unified/ver10_omega_mid_unified_prod/checkpoints"
+cleanup_checkpoints "$OMEGA_MID_CHECKPOINT_DIR" \
+  '.*/chunk_[0-9]{6}_rows_[0-9]{6}_[0-9]{6}\.mat' 737 omega-mid \
+  fff54070d4740c62e2b1a733ac7678f56e15172a93e2083923141ff8e478ebe5
+
+inventory_valid "$UPPER_MARKER" upper
+inventory_valid "$OMEGA_MID_MARKER" omega-mid
+# The Omega-mid publisher intentionally changes only these result paths.
+# A valid phase inventory already fixes their bytes; reject any unrelated
+# tracked, staged, or untracked source-tree change before declaring success.
+FINAL_UNEXPECTED_SOURCE_STATUS="$(git -C "$SOURCE_DIR" status --porcelain=v1 \
+  --untracked-files=all -- . \
+  ':(exclude)results/J1_OmegaMid.csv' \
+  ':(exclude)results/J2_OmegaMid.csv' \
+  ':(exclude)results/verification_summary.json' \
+  ':(exclude)results/verification_summary.md' \
+  ':(exclude)results/omega_mid_current.json' \
+  ':(exclude)results/omega_mid_unified/**' \
+  ':(exclude)results/omega_mid_publications/**')"
+test -z "$FINAL_UNEXPECTED_SOURCE_STATUS"
+PRODUCTION_MARKER_STAGE="$(mktemp "$STATE_DIR/.production.XXXXXX")"
+(
+  cd "$STATE_DIR"
+  sha256sum "$(basename "$UPPER_MARKER")" "$(basename "$OMEGA_MID_MARKER")"
+) > "$PRODUCTION_MARKER_STAGE"
+mv "$PRODUCTION_MARKER_STAGE" "$PRODUCTION_MARKER"
+(cd "$STATE_DIR" && sha256sum -c "$(basename "$PRODUCTION_MARKER")")
+git -C "$SOURCE_DIR" status --short \
+  > "$STATE_DIR/production-source-status.txt"
+printf '%s\n' "production certificate completed"

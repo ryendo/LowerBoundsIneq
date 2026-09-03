@@ -35,6 +35,11 @@ assert(first.summary.num_resumed == 0);
 assert(first.summary.exact_selected_task_id_coverage);
 assert(~first.summary.exact_full_task_id_coverage);
 assert(~first.summary.complete_certificate);
+assert(first.runtime_rechecked_after_run);
+assert(ischar(first.runtime_sha256) ...
+    && ~isempty(regexp(first.runtime_sha256, ...
+        '^[0-9a-f]{64}$','once')));
+assert(strcmp(first.config.runtime_sha256,first.runtime_sha256));
 
 checkpoint_dir = fullfile( ...
     output_dir,'checkpoint_validation','checkpoints');
@@ -71,6 +76,8 @@ assert(isnan(payload.record.J1_lower));
 resumed = run_omega_up_all_residual_parallel(common{:});
 assert(resumed.summary.num_resumed == numel(task_ids));
 assert(resumed.summary.exact_selected_task_id_coverage);
+assert(resumed.runtime_rechecked_after_run);
+assert(strcmp(resumed.config.runtime_sha256,resumed.runtime_sha256));
 
 fprintf(['test_omega_up_checkpoint_validation: PASS ', ...
     '(bad id and +Inf checkpoints rejected)\n']);
